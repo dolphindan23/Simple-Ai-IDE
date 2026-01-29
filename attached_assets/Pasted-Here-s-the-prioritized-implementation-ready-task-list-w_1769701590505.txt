@@ -1,0 +1,222 @@
+Here’s the prioritized, implementation-ready task list (with concrete file targets + what to change). This stays aligned with your current architecture (SSE, run folders, existing roles) and pulls the best *Nanocoder-inspired* ideas in a way that won’t bloat SimpleAide.
+
+---
+
+## P0 — Fix AgentProfile type sync (unblocks everything)
+
+### What to change
+
+**Frontend types must match backend payload**, otherwise you can’t render model badges, context meter, or agent settings.
+
+### Files
+
+* `client/src/hooks/useAIRunEvents.ts` (or wherever `AgentProfile` is defined)
+* `client/src/components/AgentRosterCard.tsx` (to render model badge once types exist)
+
+### Patch plan
+
+1. Expand `AgentProfile` interface to include backend fields:
+
+* `model: string | null`
+* `max_context_tokens: number | null`
+* `default_temperature: number | null`
+* `tools_enabled: string[] | null`
+* `system_prompt: string | null`
+* `enabled: boolean`
+* `updated_at?: string`
+
+2. Make the hook store/return these fields (don’t discard them during mapping).
+
+3. Add a safe fallback for older profiles (null/undefined).
+
+✅ Outcome: model badges and settings UI become possible immediately.
+
+---
+
+## P0 — Add `done` agent status (UI expects it)
+
+### What to change
+
+Right now backend only emits: `idle|working|waiting|error`. UI expects `done`.
+
+### Files
+
+* `server/aiEvents.ts` (or where `emitAgentStatus` is defined)
+* `client/src/components/AgentRosterCard.tsx` (status dot mapping)
+
+### Patch plan
+
+1. Update backend status union to include `"done"`.
+2. Emit `"done"` at the end of each agent’s step in the run lifecycle:
+
+   * After a run completes (or after an agent finishes its segment), emit `AGENT_STATUS: done`.
+3. UI: map `done` to a “completed” indicator (subtle, non-noisy).
+
+✅ Outcome: roster stops looking like agents are stuck “working” forever.
+
+---
+
+## P1 — Wire granular events in `taskRunner` (make the timeline *real*)
+
+You already have the event primitives imported—this is mostly instrumenting key choke points.
+
+### Events to emit
+
+* `READ_FILE` when you read files for snapshot/context selection
+* `WRITE_FILE` when you apply patches / modify files
+* `TOOL_CALL` when running verification commands (tests, lint, build)
+* Add a periodic `STEP` every meaningful stage to prevent “dead air”
+
+### Files
+
+* `server/taskRunner.ts` (main)
+* possibly `server/fs/*` helpers if file IO is abstracted
+* `server/exec/*` if shell execution is abstracted
+
+### Patch plan (minimum)
+
+1. Repo snapshot / context gather:
+
+   * Wherever you iterate files to create prompt context, call:
+
+     * `emitReadFile(runId, agentId, path)`
+2. Patch apply:
+
+   * Wherever you write file contents or apply unified diff:
+
+     * `emitWriteFile(runId, agentId, path, { added, removed })`
+3. Verification:
+
+   * Wherever you run commands like `npm test`, `pytest`, etc:
+
+     * `emitToolCall(runId, agentId, cmdString)`
+   * On completion, emit a `STEP` like “Tests passed” or `ERROR`.
+
+✅ Outcome: the timeline becomes an execution trace (Bloomberg-terminal vibe), not just chat.
+
+---
+
+## P1 — Add progress tracking (low effort, big UX payoff)
+
+### Goal
+
+Support a roster “2/6” and small timeline progress bar without animations.
+
+### Files
+
+* `server/aiEvents.ts` (extend payload structure)
+* `server/taskRunner.ts` (emit progress metadata)
+* `client/src/components/ActivityTimeline.tsx` (render progress if present)
+* `client/src/components/AgentRosterCard.tsx` (optional: show `step/total`)
+
+### Patch plan
+
+1. Extend `emitStep()` to accept optional:
+
+* `step_index`
+* `step_total`
+* `phase` (“Planning”, “Applying patch”, “Running tests”)
+
+2. In `taskRunner.ts`, define a simple step map per mode:
+
+* Plan: 1) analyze 2) identify files 3) propose plan
+* Implement: 1) analyze 2) patch 3) verify 4) propose changeset
+* Test: 1) run tests 2) parse output 3) propose fixes (if needed)
+
+✅ Outcome: perceived responsiveness skyrockets, without “spinner chaos”.
+
+---
+
+## P2 — Model badges (fast win now that P0 is done)
+
+### Files
+
+* `client/src/components/AgentRosterCard.tsx`
+
+### Patch plan
+
+* Under agent name, show a tiny badge: `profile.model`
+* If `fast_mode`, optionally show `FAST` pill
+* Keep it subtle: outline badge, 10px text
+
+✅ Outcome: immediate clarity + “professional terminal metadata”.
+
+---
+
+## P2 — Nanocoder-inspired “commands” as templates (very aligned with SimpleAide)
+
+Nanocoder’s `.nanocoder/commands/*.md` idea is perfect for SimpleAide’s `/plan /implement /test` flow.
+
+### Implementation (minimal)
+
+* Add `.simpleaide/commands/*.md` (or JSON)
+* On backend: load available templates for a project
+* UI: template dropdown that inserts a structured goal or preamble
+
+### Files
+
+* `server/contextPacks.ts` or new `server/commands.ts`
+* `server/routes.ts` add `GET /api/ai/commands`
+* `client/src/components/AITeamPanel.tsx` add dropdown
+
+✅ Outcome: repeatable “operator workflows” instead of retyping prompt rituals.
+
+---
+
+## P3 — Changeset approval workflow (your Phase 2 gate)
+
+You already have diffs and “review mode”. The missing part is a first-class **changeset state machine**.
+
+### Minimal MVP design
+
+* When agent proposes diff → store as `changeset` (status=`proposed`)
+* UI shows drawer with:
+
+  * unified diff
+  * risk summary (your validator)
+  * Approve / Revise / Reject
+* Applying changes blocked unless `approved`
+
+### Files
+
+* DB migrations (`server/aiDb.ts` or migrations folder)
+* `server/routes.ts` (approve/reject endpoints)
+* `client/src/components/ChangeSetDrawer.tsx` (new or reuse diff viewer)
+
+✅ Outcome: human-in-the-loop control that feels “real engineering”.
+
+---
+
+## P3 — Run Chat (mid-run conversational steering)
+
+Nanocoder’s strength is the *interactive loop*. You can add this without rewiring everything:
+
+* `POST /api/ai/runs/:id/message` inserts a message
+* runtime checks for new messages at safe checkpoints
+* message becomes appended context for next tool/LLM call
+
+✅ Outcome: you can “pilot” a run like a command console.
+
+---
+
+# The tight execution order (recommended)
+
+1. **P0:** AgentProfile sync
+2. **P0:** Add `done` status
+3. **P1:** Instrument taskRunner with READ/WRITE/TOOL_CALL
+4. **P1:** Add progress metadata
+5. **P2:** Model badges + roster polish
+6. **P2:** Commands/templates
+7. **P3:** Changeset gating
+8. **P3:** Run chat
+9. **P3:** Context meter + packs
+
+---
+
+## What to “steal” from Nanocoder immediately (high ROI)
+
+* **Command templates** (drop-in feature, big UX payoff)
+* **Config layering** (project config overrides global defaults)
+* **Explicit tool-call narration** (your timeline events are the GUI version)
+
+If you want, I can also produce a **single consolidated patch plan** (exact TS types + event payload schema + where to emit events in taskRunner) in a copy/paste-ready checklist format for your “backend agent” and “web agent.”
