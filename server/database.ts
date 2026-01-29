@@ -5,6 +5,8 @@ import Database from "better-sqlite3";
 const PROJECT_ROOT = path.resolve(process.cwd());
 const DB_DIR = path.join(PROJECT_ROOT, ".simpleaide", "databases");
 
+const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 export interface DatabaseInfo {
   name: string;
   type: "sqlite" | "postgres";
@@ -39,34 +41,60 @@ function ensureDbDir() {
   }
 }
 
+function isValidPath(dbPath: string): boolean {
+  const resolved = path.resolve(dbPath);
+  
+  if (!resolved.startsWith(DB_DIR + path.sep) && resolved !== DB_DIR) {
+    return false;
+  }
+  
+  if (!fs.existsSync(resolved)) {
+    return false;
+  }
+  
+  return true;
+}
+
+function validateIdentifier(name: string, type: string): void {
+  if (!name || typeof name !== "string") {
+    throw new Error(`${type} is required`);
+  }
+  if (!IDENTIFIER_REGEX.test(name)) {
+    throw new Error(`Invalid ${type}: only alphanumeric characters and underscores allowed`);
+  }
+  if (name.length > 128) {
+    throw new Error(`${type} is too long (max 128 characters)`);
+  }
+}
+
 function findSqliteFiles(): string[] {
   ensureDbDir();
   const files: string[] = [];
   
-  function scanDir(dir: string) {
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          scanDir(fullPath);
-        } else if (entry.name.endsWith(".db") || entry.name.endsWith(".sqlite") || entry.name.endsWith(".sqlite3")) {
-          files.push(fullPath);
-        }
+  try {
+    const entries = fs.readdirSync(DB_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = path.join(DB_DIR, entry.name);
+      if (!entry.isDirectory() && 
+          (entry.name.endsWith(".db") || entry.name.endsWith(".sqlite") || entry.name.endsWith(".sqlite3"))) {
+        files.push(fullPath);
       }
-    } catch (e) {
-      // ignore permission errors
     }
+  } catch (e) {
+    // ignore permission errors
   }
   
-  scanDir(PROJECT_ROOT);
   return files;
 }
 
 const dbConnections = new Map<string, Database.Database>();
 
 function getDb(dbPath: string): Database.Database {
+  if (!isValidPath(dbPath)) {
+    throw new Error("Access denied: database path is outside allowed directory");
+  }
+  
   if (dbConnections.has(dbPath)) {
     return dbConnections.get(dbPath)!;
   }
@@ -74,6 +102,37 @@ function getDb(dbPath: string): Database.Database {
   const db = new Database(dbPath);
   dbConnections.set(dbPath, db);
   return db;
+}
+
+function getValidTables(db: Database.Database): Set<string> {
+  const tables = db.prepare(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+  `).all() as { name: string }[];
+  return new Set(tables.map(t => t.name));
+}
+
+function getValidColumns(db: Database.Database, tableName: string): Set<string> {
+  const columns = db.prepare(`PRAGMA table_info("${tableName}")`).all() as Array<{
+    name: string;
+  }>;
+  return new Set(columns.map(c => c.name));
+}
+
+function validateTableName(db: Database.Database, tableName: string): void {
+  validateIdentifier(tableName, "table name");
+  const validTables = getValidTables(db);
+  if (!validTables.has(tableName)) {
+    throw new Error(`Table '${tableName}' does not exist`);
+  }
+}
+
+function validateColumnName(db: Database.Database, tableName: string, columnName: string): void {
+  validateIdentifier(columnName, "column name");
+  const validColumns = getValidColumns(db, tableName);
+  if (!validColumns.has(columnName)) {
+    throw new Error(`Column '${columnName}' does not exist in table '${tableName}'`);
+  }
 }
 
 export function listDatabases(): DatabaseInfo[] {
@@ -94,10 +153,23 @@ export function listDatabases(): DatabaseInfo[] {
 
 export function createSqliteDatabase(name: string): DatabaseInfo {
   ensureDbDir();
-  const dbPath = path.join(DB_DIR, name.endsWith(".db") ? name : `${name}.db`);
+  
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!safeName || safeName.startsWith(".") || safeName.includes("..")) {
+    throw new Error("Invalid database name");
+  }
+  
+  const dbPath = path.join(DB_DIR, safeName.endsWith(".db") ? safeName : `${safeName}.db`);
+  
+  const resolved = path.resolve(dbPath);
+  if (!resolved.startsWith(DB_DIR + path.sep)) {
+    throw new Error("Invalid database path");
+  }
   
   const db = new Database(dbPath);
   db.close();
+  
+  fs.chmodSync(dbPath, 0o600);
   
   const relativePath = path.relative(PROJECT_ROOT, dbPath);
   return {
@@ -132,6 +204,8 @@ export function getTables(dbPath: string): TableInfo[] {
 export function getTableSchema(dbPath: string, tableName: string): ColumnInfo[] {
   const db = getDb(dbPath);
   
+  validateTableName(db, tableName);
+  
   const columns = db.prepare(`PRAGMA table_info("${tableName}")`).all() as Array<{
     cid: number;
     name: string;
@@ -158,13 +232,20 @@ export function getRows(
   const db = getDb(dbPath);
   const { limit = 100, offset = 0, orderBy, orderDir = "asc" } = options;
   
+  validateTableName(db, tableName);
+  
   let query = `SELECT * FROM "${tableName}"`;
   if (orderBy) {
-    query += ` ORDER BY "${orderBy}" ${orderDir.toUpperCase()}`;
+    validateColumnName(db, tableName, orderBy);
+    const dir = orderDir.toLowerCase() === "desc" ? "DESC" : "ASC";
+    query += ` ORDER BY "${orderBy}" ${dir}`;
   }
   query += ` LIMIT ? OFFSET ?`;
   
-  const rows = db.prepare(query).all(limit, offset) as Record<string, unknown>[];
+  const safeLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 100)), 1000);
+  const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+  
+  const rows = db.prepare(query).all(safeLimit, safeOffset) as Record<string, unknown>[];
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   
   const countResult = db.prepare(`SELECT COUNT(*) as count FROM "${tableName}"`).get() as { count: number };
@@ -179,11 +260,21 @@ export function getRows(
 export function insertRow(dbPath: string, tableName: string, data: Record<string, unknown>): QueryResult {
   const db = getDb(dbPath);
   
-  const columns = Object.keys(data);
-  const values = Object.values(data);
-  const placeholders = columns.map(() => "?").join(", ");
+  validateTableName(db, tableName);
   
-  const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(", ")}) VALUES (${placeholders})`;
+  const validColumns = getValidColumns(db, tableName);
+  const columnNames = Object.keys(data);
+  
+  for (const col of columnNames) {
+    if (!validColumns.has(col)) {
+      throw new Error(`Column '${col}' does not exist in table '${tableName}'`);
+    }
+  }
+  
+  const values = Object.values(data);
+  const placeholders = columnNames.map(() => "?").join(", ");
+  
+  const query = `INSERT INTO "${tableName}" (${columnNames.map(c => `"${c}"`).join(", ")}) VALUES (${placeholders})`;
   const result = db.prepare(query).run(...values);
   
   return {
@@ -203,7 +294,19 @@ export function updateRow(
 ): QueryResult {
   const db = getDb(dbPath);
   
-  const setClauses = Object.keys(data).map(col => `"${col}" = ?`).join(", ");
+  validateTableName(db, tableName);
+  validateColumnName(db, tableName, pkColumn);
+  
+  const validColumns = getValidColumns(db, tableName);
+  const updateColumns = Object.keys(data);
+  
+  for (const col of updateColumns) {
+    if (!validColumns.has(col)) {
+      throw new Error(`Column '${col}' does not exist in table '${tableName}'`);
+    }
+  }
+  
+  const setClauses = updateColumns.map(col => `"${col}" = ?`).join(", ");
   const values = [...Object.values(data), pkValue];
   
   const query = `UPDATE "${tableName}" SET ${setClauses} WHERE "${pkColumn}" = ?`;
@@ -220,6 +323,9 @@ export function updateRow(
 export function deleteRow(dbPath: string, tableName: string, pkColumn: string, pkValue: unknown): QueryResult {
   const db = getDb(dbPath);
   
+  validateTableName(db, tableName);
+  validateColumnName(db, tableName, pkColumn);
+  
   const query = `DELETE FROM "${tableName}" WHERE "${pkColumn}" = ?`;
   const result = db.prepare(query).run(pkValue);
   
@@ -233,6 +339,14 @@ export function deleteRow(dbPath: string, tableName: string, pkColumn: string, p
 
 export function executeQuery(dbPath: string, sql: string): QueryResult {
   const db = getDb(dbPath);
+  
+  if (!sql || typeof sql !== "string" || sql.trim().length === 0) {
+    throw new Error("SQL query is required");
+  }
+  
+  if (sql.length > 10000) {
+    throw new Error("SQL query is too long");
+  }
   
   const trimmedSql = sql.trim().toLowerCase();
   const isSelect = trimmedSql.startsWith("select") || 
