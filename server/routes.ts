@@ -9,6 +9,7 @@ import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecr
 import { runsStorage } from "./runs";
 import { runAutoWorkflow, applyDiffWithBackup, revertDiff, isWorkflowRunning } from "./autoRunner";
 import * as db from "./database";
+import { setupShellWebSocket, getActiveSessions as getActiveShellSessions } from "./shell";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -82,6 +83,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Setup shell WebSocket
+  setupShellWebSocket(httpServer);
+
   // File system routes
   app.get("/api/files", (req: Request, res: Response) => {
     const rootDir = process.cwd();

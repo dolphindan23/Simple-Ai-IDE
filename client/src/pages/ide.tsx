@@ -21,6 +21,7 @@ import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { RunTimeline } from "@/components/RunTimeline";
 import { DatabasePanel } from "@/components/DatabasePanel";
+import { ShellPanel } from "@/components/ShellPanel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -879,13 +880,7 @@ export default function IDEPage() {
                 )}
                 
                 {activeTab === "shell" && (
-                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
-                    <div className="text-center">
-                      <Terminal className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm font-medium">Shell</p>
-                      <p className="text-xs opacity-60 mt-1">Interactive shell coming soon</p>
-                    </div>
-                  </div>
+                  <ShellPanel />
                 )}
                 
                 {activeTab === "developer" && (
