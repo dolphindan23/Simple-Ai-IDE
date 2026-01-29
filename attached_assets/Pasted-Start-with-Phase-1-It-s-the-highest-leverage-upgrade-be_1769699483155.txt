@@ -1,0 +1,282 @@
+Start with **Phase 1**. It’s the highest leverage upgrade because it turns the sidebar from “modes + output” into a **living system** with *visibility, accountability, and trust*. And it slots cleanly into what SimpleAide already has (runs on disk, roles, diff viewer, modes).
+
+Below is the **proper implementation spec for Phase 1**—DB + runtime event contract + SSE + UI wiring—written so you can hand it to your engineer/agent and build it without debating architecture.
+
+---
+
+# Phase 1 Build Spec: Agent Visibility + Activity Timeline
+
+## A) Data model (minimal tables)
+
+Even if you keep `.simpleaide/runs/` as the source of truth, you still want a DB index for:
+
+* querying recent runs
+* streaming events
+* cross-session continuity
+
+### 1) `agent_profiles`
+
+Purpose: backend-stored agent configs (model/tool/context defaults)
+
+Fields:
+
+* `id` (pk): `"planner" | "coder" | "reviewer" | "testfixer" | "doc"` (match your existing roles)
+* `display_name`: “Planner Agent”
+* `model`: string
+* `max_context_tokens`: int
+* `system_prompt`: text
+* `default_temperature`: float
+* `tools_enabled`: json
+* `risk_tolerance`: `conservative|balanced|aggressive`
+* `verbosity`: `low|normal|high`
+* `enabled`: boolean
+* `created_at`, `updated_at`
+
+**Migration note:** pre-seed these rows from your current role config at startup (one-time, idempotent).
+
+### 2) `ai_runs`
+
+Purpose: represents Plan/Implement/Test/Review executions (maps to your run folders)
+
+Fields:
+
+* `id` (pk) UUID
+* `run_key` (unique): your existing run ID/folder name under `.simpleaide/runs/`
+* `mode`: `plan|implement|test|review`
+* `status`: `queued|running|needs_approval|completed|failed|cancelled`
+* `goal`: text
+* `agents`: json array (e.g. `["planner","coder"]`)
+* `fast_mode`: boolean (your Fast/Accurate toggle)
+* `created_by_user_id` nullable
+* timestamps
+
+### 3) `ai_run_events`
+
+Purpose: powers the activity timeline + roster status
+
+Fields:
+
+* `id` (pk)
+* `run_id` (fk)
+* `agent_id` (fk agent_profiles) nullable (some system events don’t map to an agent)
+* `type` enum (see taxonomy below)
+* `message` short text (human readable)
+* `data` json (structured payload)
+* `created_at`
+
+**Indexing:** `(run_id, created_at)` and `(run_id, agent_id, created_at)`.
+
+---
+
+## B) Runtime event contract (what SimpleAide must emit)
+
+This is the core. Your agents already “do stuff”; now they must narrate *state changes* as structured events.
+
+### Event taxonomy (Phase 1 set)
+
+Keep it tight:
+
+**Status**
+
+* `RUN_STATUS` (`queued|running|needs_approval|completed|failed|cancelled`)
+* `AGENT_STATUS` (`idle|working|waiting|error`)
+
+**Actions**
+
+* `STEP` (generic: “Analyzing repo structure”)
+* `READ_FILE`
+* `WRITE_FILE`
+* `TOOL_CALL` (optional: name only; don’t dump secrets)
+* `NOTE` (small annotation)
+
+**Errors**
+
+* `ERROR`
+
+### Required event shape
+
+Every event emitted should follow:
+
+```json
+{
+  "run_id": "uuid",
+  "agent_id": "coder",
+  "type": "READ_FILE",
+  "message": "Reading src/api/entitlements.ts",
+  "data": { "path": "src/api/entitlements.ts" },
+  "ts": "ISO8601"
+}
+```
+
+### Emission rules (important)
+
+* Emit `RUN_STATUS` whenever run state changes.
+* Emit `AGENT_STATUS` whenever an agent starts work, waits, errors, or completes.
+* Emit `READ_FILE/WRITE_FILE` for any file operation.
+* Emit a `STEP` at least every ~5–10 “logical actions” so the timeline never looks dead.
+
+This alone makes the AI feel “alive” without adding flashy UI.
+
+---
+
+## C) SSE endpoint (live streaming)
+
+Use SSE (simplest, works everywhere).
+
+### Endpoint
+
+`GET /v1/ai/runs/:id/stream`
+
+Behavior:
+
+* Immediately send a `hello` event with current run status + agent statuses snapshot
+* Then stream `ai_run_events` as they are inserted
+
+### Implementation model
+
+* In-process pub/sub (Node EventEmitter / broadcast channel) OR Postgres LISTEN/NOTIFY
+* On new event insert → publish to subscribers
+
+**SSE message format**
+
+* event name: `event`
+* data: JSON string
+
+Also provide a non-stream fallback:
+`GET /v1/ai/runs/:id/events?cursor=...`
+
+---
+
+## D) API endpoints (Phase 1)
+
+### Agent profiles
+
+* `GET /v1/ai/agent-profiles`
+* `PUT /v1/ai/agent-profiles/:id` (admin)
+
+### Runs
+
+* `POST /v1/ai/runs` (create run record + map to run folder)
+* `GET /v1/ai/runs/:id`
+* `GET /v1/ai/runs/:id/events`
+* `GET /v1/ai/runs/:id/stream` (SSE)
+
+### “Emit event” (internal only)
+
+Your runtime can call:
+
+* `POST /v1/ai/runs/:id/events` (protected / internal token)
+
+Or skip the HTTP hop and write directly to DB from the runtime if it’s the same service.
+
+---
+
+## E) Integrate with `.simpleaide/runs/` (don’t rip it out)
+
+You already store runs on disk. Keep it. Just add a thin mapping.
+
+Recommended structure (if you don’t already):
+
+```
+.simpleaide/runs/<run_key>/
+  run.json                  # goal, mode, agents, fast_mode, created_at
+  events.ndjson             # append-only event log (optional but great)
+  artifacts/                # diffs, patches, test logs, etc.
+```
+
+### Dual-write pattern (best)
+
+When an event occurs:
+
+1. append to `events.ndjson` (super reliable)
+2. insert into `ai_run_events` (for UI + SSE)
+
+If DB is down, the run still works and you can replay later.
+
+---
+
+## F) UI changes (Phase 1 deliverables)
+
+You already have the panel. Add two UI blocks:
+
+### 1) Agent roster (collapsible, top of sidebar)
+
+Per agent row show:
+
+* status dot (idle/working/waiting/error)
+* agent name
+* current action (latest STEP/READ/WRITE message)
+* optional tiny context bar (Phase 3 later)
+
+Source of truth:
+
+* Derived from latest `AGENT_STATUS` per agent
+* “Current action” = most recent event for that agent
+
+### 2) Activity timeline feed (main body)
+
+A simple scrolling list grouped by agent (optional) or chronological (fine for v1).
+
+Each item:
+
+* icon (type)
+* message
+* timestamp
+* expandable “details” drawer for `data`
+
+**Don’t** animate heavily—just subtle “new event” glow.
+
+---
+
+## G) “Fast/Accurate” must affect telemetry (Phase 1 behavior)
+
+Right now it’s mostly a toggle. Make it alter the run:
+
+**Fast**
+
+* fewer `STEP` emissions (still enough to feel alive)
+* reduced file reads
+* no deep scans
+
+**Accurate**
+
+* more `STEP` checkpoints
+* structured reading (“Scanning X files”)
+* emits explicit status transitions (better UI)
+
+This will make the toggle feel meaningful *immediately*.
+
+---
+
+# Exact Phase 1 Acceptance Criteria (so you know it’s “done”)
+
+1. When a run starts, the roster shows agents switching from `idle → working`.
+2. As the runtime reads/writes files, the timeline updates live without refresh.
+3. If the agent pauses (waiting on user or awaiting mode transition), roster shows `waiting`.
+4. On error, roster shows `error` and timeline includes `ERROR` event with message.
+5. If SSE is disconnected, UI falls back to polling `events?cursor=` and continues.
+
+---
+
+# Implementation Order (fastest path)
+
+1. Add DB tables + seed agent_profiles
+2. Add run creation endpoint + run status updates
+3. Add event insert + retrieval endpoint
+4. Add SSE stream with pub/sub broadcast
+5. Update runtime to emit events at key points
+6. Build roster + timeline UI
+
+Ship Phase 1.
+
+---
+
+## If you want the *one critical design choice* to make now
+
+Make **run events** the universal primitive. Everything else (roster, timeline, later approvals) becomes a view over events.
+
+That’s what keeps the UI clean and “terminal-like” while still feeling alive.
+
+---
+
+If you paste your current repo structure (where the AI Team panel lives + where runs are executed), I can tailor the event emission points to your exact pipeline (Plan/Implement/Test/Review) so you don’t over-instrument or miss key transitions.
