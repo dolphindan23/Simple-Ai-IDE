@@ -1,14 +1,89 @@
 import { storage } from "./storage";
 import { OllamaAdapter } from "./ollama";
-import type { Task, TaskMode } from "@shared/schema";
+import type { Task, TaskMode, TrustSettings } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync, spawn } from "child_process";
 import { captureRepoSnapshot, formatSnapshotForPrompt, extractTargetFilesFromGoal } from "./repoSnapshot";
-import { validatePatch, extractDiffFromResponse, formatValidationErrors, parsePatch } from "./patchValidator";
+import { 
+  validatePatch, 
+  extractDiffFromResponse, 
+  formatValidationErrors, 
+  parsePatch, 
+  validateConfirmationToken,
+  TrustLimits 
+} from "./patchValidator";
 
 const ALLOWED_COMMANDS = new Set(["git", "pytest", "ruff", "mypy", "npm", "node", "python", "python3"]);
-const MAX_TESTFIXER_ATTEMPTS = 3;
+
+let gitAvailable: boolean | null = null;
+
+export function checkGitAvailable(): boolean {
+  if (gitAvailable !== null) return gitAvailable;
+  try {
+    execSync("git --version", { encoding: "utf-8", timeout: 5000 });
+    gitAvailable = true;
+  } catch {
+    gitAvailable = false;
+  }
+  return gitAvailable;
+}
+
+export function getDefaultTrustSettings(): TrustSettings {
+  return {
+    autoFixEnabled: false,
+    maxFixAttempts: 3,
+    maxFilesPerPatch: 10,
+    maxLinesPerPatch: 500,
+    sensitivePaths: [
+      "server/**",
+      "scripts/**",
+      "package.json",
+      "package-lock.json",
+      "*.config.*",
+      ".env*",
+      ".simpleaide/**",
+    ],
+    verifyAllowlist: [
+      "npm test",
+      "npm run test",
+      "npm run lint",
+      "npm run build",
+      "npm run typecheck",
+    ],
+  };
+}
+
+export function getTrustLimits(settings?: TrustSettings): TrustLimits {
+  const s = settings || getDefaultTrustSettings();
+  return {
+    maxFilesPerPatch: s.maxFilesPerPatch,
+    maxLinesPerPatch: s.maxLinesPerPatch,
+    sensitivePaths: s.sensitivePaths,
+  };
+}
+
+export function isVerifyCommandAllowed(command: string, allowlist: string[]): boolean {
+  const normalizedCommand = command.trim().toLowerCase();
+  return allowlist.some(allowed => {
+    const normalizedAllowed = allowed.trim().toLowerCase();
+    return normalizedCommand === normalizedAllowed || normalizedCommand.startsWith(normalizedAllowed + " ");
+  });
+}
+
+export function getPackageJsonScripts(repoPath: string): string[] {
+  try {
+    const pkgPath = path.join(path.resolve(repoPath), "package.json");
+    if (!fs.existsSync(pkgPath)) return [];
+    
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    if (!pkg.scripts) return [];
+    
+    return Object.keys(pkg.scripts).map(script => `npm run ${script}`);
+  } catch {
+    return [];
+  }
+}
 
 function log(taskId: string, message: string) {
   storage.addTaskLog(taskId, message);
@@ -49,12 +124,13 @@ function gitSnapshot(cwd: string, message: string): boolean {
 }
 
 function applyDiff(cwd: string, diffContent: string): { success: boolean; error?: string; filesModified?: string[] } {
+  const resolvedCwd = path.resolve(cwd);
   const hunks = parsePatch(diffContent);
   const filesModified: string[] = [];
   
   for (const hunk of hunks) {
     if (hunk.operation === "create" && hunk.newPath) {
-      const targetPath = path.join(cwd, hunk.newPath);
+      const targetPath = path.join(resolvedCwd, hunk.newPath);
       const targetDir = path.dirname(targetPath);
       
       if (!fs.existsSync(targetDir)) {
@@ -70,7 +146,7 @@ function applyDiff(cwd: string, diffContent: string): { success: boolean; error?
     }
     
     if (hunk.operation === "delete" && hunk.oldPath) {
-      const targetPath = path.join(cwd, hunk.oldPath);
+      const targetPath = path.join(resolvedCwd, hunk.oldPath);
       if (fs.existsSync(targetPath)) {
         fs.unlinkSync(targetPath);
         filesModified.push(hunk.oldPath);
@@ -81,18 +157,26 @@ function applyDiff(cwd: string, diffContent: string): { success: boolean; error?
   
   const hasModifyHunks = hunks.some(h => h.operation === "modify");
   if (hasModifyHunks) {
-    const tempFile = path.join(cwd, ".simpleaide-temp.patch");
+    if (!checkGitAvailable()) {
+      return { 
+        success: false, 
+        error: "Git required for patch apply; install git or switch to pure-js apply", 
+        filesModified 
+      };
+    }
+    
+    const tempFile = path.join(resolvedCwd, ".simpleaide-temp.patch");
     
     try {
       fs.writeFileSync(tempFile, diffContent);
       
-      const checkResult = runCommand(["git", "apply", "--check", tempFile], cwd);
+      const checkResult = runCommand(["git", "apply", "--check", "--whitespace=nowarn", tempFile], resolvedCwd);
       if (checkResult.exitCode !== 0) {
         fs.unlinkSync(tempFile);
         return { success: false, error: checkResult.stderr || "Patch check failed", filesModified };
       }
       
-      const applyResult = runCommand(["git", "apply", tempFile], cwd);
+      const applyResult = runCommand(["git", "apply", "--whitespace=nowarn", tempFile], resolvedCwd);
       fs.unlinkSync(tempFile);
       
       if (applyResult.exitCode !== 0) {
@@ -477,9 +561,11 @@ async function runTestFixerLoop(
   task: Task,
   ollama: OllamaAdapter,
   verifyCommand: string,
-  maxAttempts: number = MAX_TESTFIXER_ATTEMPTS
+  maxAttempts: number = 3,
+  trustSettings?: TrustSettings
 ): Promise<{ success: boolean; attempts: number; finalResult: VerifyResult }> {
   const cwd = path.resolve(task.repoPath);
+  const limits = getTrustLimits(trustSettings);
   
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(task.id, `[INFO] TestFixer attempt ${attempt}/${maxAttempts}\n`);
@@ -563,9 +649,26 @@ Output ONLY the unified diff. No explanations.`;
       continue;
     }
     
-    const validation = validatePatch(fixDiff, cwd);
+    const validation = validatePatch(fixDiff, cwd, limits);
     if (!validation.valid) {
       log(task.id, `[WARN] Fix diff validation failed:\n${formatValidationErrors(validation)}\n`);
+      storage.setArtifact(task.id, `fix_validation_${attempt}.json`, JSON.stringify({
+        valid: validation.valid,
+        errors: validation.errors,
+        warnings: validation.warnings,
+        fileCount: validation.fileCount,
+        lineCount: validation.lineCount,
+        dangerSummary: validation.dangerSummary,
+      }, null, 2));
+      continue;
+    }
+    
+    if (validation.requiresConfirmation) {
+      log(task.id, `[WARN] Fix diff requires confirmation (dangerous changes). Skipping auto-apply.\n`);
+      storage.setArtifact(task.id, `fix_dangerous_${attempt}.json`, JSON.stringify({
+        message: "Fix patch blocked - contains dangerous changes",
+        dangerSummary: validation.dangerSummary,
+      }, null, 2));
       continue;
     }
     
@@ -587,11 +690,21 @@ Output ONLY the unified diff. No explanations.`;
   return { success: finalResult.passed, attempts: maxAttempts, finalResult };
 }
 
-async function runVerifyMode(task: Task): Promise<void> {
+async function runVerifyMode(task: Task, trustSettings?: TrustSettings): Promise<void> {
   log(task.id, `[INFO] Starting verification...\n`);
   
   const cwd = path.resolve(task.repoPath);
   const verifyCommand = task.goal || "npm test";
+  const settings = trustSettings || getDefaultTrustSettings();
+  
+  const packageScripts = getPackageJsonScripts(cwd);
+  const fullAllowlist = [...settings.verifyAllowlist, ...packageScripts];
+  
+  if (!isVerifyCommandAllowed(verifyCommand, fullAllowlist)) {
+    log(task.id, `[ERROR] Verify command not in allowlist: ${verifyCommand}\n`);
+    log(task.id, `[INFO] Allowed commands: ${fullAllowlist.join(", ")}\n`);
+    throw new Error(`Verify command not allowed: ${verifyCommand}`);
+  }
   
   log(task.id, `[INFO] Running: ${verifyCommand}\n`);
   
@@ -664,7 +777,31 @@ export async function runTask(taskId: string): Promise<void> {
   }
 }
 
-export async function applyTaskDiff(taskId: string, diffName: string): Promise<{ success: boolean; error?: string; filesModified?: string[] }> {
+export interface ApplyDiffOptions {
+  confirmationToken?: string;
+  trustSettings?: TrustSettings;
+}
+
+export interface ApplyDiffResult {
+  success: boolean;
+  error?: string;
+  filesModified?: string[];
+  requiresConfirmation?: boolean;
+  confirmationToken?: string;
+  dangerSummary?: Array<{ file: string; reason: string; pattern?: string }>;
+  validationReport?: {
+    fileCount: number;
+    lineCount: number;
+    errors: string[];
+    warnings: string[];
+  };
+}
+
+export async function applyTaskDiff(
+  taskId: string, 
+  diffName: string,
+  options: ApplyDiffOptions = {}
+): Promise<ApplyDiffResult> {
   const task = await storage.getTask(taskId);
   if (!task) {
     return { success: false, error: "Task not found" };
@@ -676,14 +813,56 @@ export async function applyTaskDiff(taskId: string, diffName: string): Promise<{
   }
 
   const cwd = path.resolve(task.repoPath);
+  const limits = getTrustLimits(options.trustSettings);
   
-  const validation = validatePatch(diffContent, cwd);
+  const validation = validatePatch(diffContent, cwd, limits, taskId, diffName);
+  
+  const validationReport = {
+    fileCount: validation.fileCount,
+    lineCount: validation.lineCount,
+    errors: validation.errors,
+    warnings: validation.warnings,
+  };
+  
+  storage.setArtifact(taskId, `${diffName}.validation.json`, JSON.stringify({
+    ...validationReport,
+    hunks: validation.hunks.map(h => ({
+      operation: h.operation,
+      path: h.newPath || h.oldPath,
+      lineCount: h.lineCount,
+    })),
+    requiresConfirmation: validation.requiresConfirmation,
+    dangerSummary: validation.dangerSummary,
+  }, null, 2));
+  
   if (!validation.valid) {
     storage.setArtifact(taskId, `${diffName}.validation.txt`, formatValidationErrors(validation));
     return { 
       success: false, 
-      error: `Patch validation failed:\n${validation.errors.join("\n")}` 
+      error: `Patch validation failed:\n${validation.errors.join("\n")}`,
+      validationReport,
     };
+  }
+  
+  if (validation.requiresConfirmation) {
+    if (!options.confirmationToken) {
+      return {
+        success: false,
+        error: "Dangerous changes detected. Manual confirmation required.",
+        requiresConfirmation: true,
+        confirmationToken: validation.confirmationToken,
+        dangerSummary: validation.dangerSummary,
+        validationReport,
+      };
+    }
+    
+    if (!validateConfirmationToken(options.confirmationToken, taskId, diffName)) {
+      return {
+        success: false,
+        error: "Invalid or expired confirmation token",
+        validationReport,
+      };
+    }
   }
   
   gitSnapshot(cwd, `SimpleAide: Before applying ${diffName}`);
@@ -692,15 +871,23 @@ export async function applyTaskDiff(taskId: string, diffName: string): Promise<{
   
   if (result.success) {
     gitSnapshot(cwd, `SimpleAide: Applied ${diffName} for "${task.goal}"`);
+    
+    storage.setArtifact(taskId, `${diffName}.applied_files.txt`, 
+      (result.filesModified || []).join("\n")
+    );
   }
   
-  return result;
+  return {
+    ...result,
+    validationReport,
+  };
 }
 
 export async function applyAndVerify(
   taskId: string,
   diffName: string,
-  verifyCommand?: string
+  verifyCommand?: string,
+  trustSettings?: TrustSettings
 ): Promise<{ 
   applySuccess: boolean; 
   verifySuccess: boolean; 
@@ -728,8 +915,36 @@ export async function applyAndVerify(
     return { applySuccess: true, verifySuccess: false, error: "Task not found for verification" };
   }
   
+  const settings = trustSettings || getDefaultTrustSettings();
+  
+  const cwd = path.resolve(task.repoPath);
+  const packageScripts = getPackageJsonScripts(cwd);
+  const fullAllowlist = [...settings.verifyAllowlist, ...packageScripts];
+  
+  if (!isVerifyCommandAllowed(verifyCommand, fullAllowlist)) {
+    return {
+      applySuccess: true,
+      verifySuccess: false,
+      error: `Verify command not allowed: ${verifyCommand}`,
+      filesModified: applyResult.filesModified
+    };
+  }
+  
   const ollama = new OllamaAdapter();
-  const fixerResult = await runTestFixerLoop(task, ollama, verifyCommand);
+  const maxAttempts = settings.autoFixEnabled ? settings.maxFixAttempts : 0;
+  
+  if (maxAttempts === 0) {
+    const verifyResult = await runVerifyStep(cwd, verifyCommand);
+    return {
+      applySuccess: true,
+      verifySuccess: verifyResult.passed,
+      attempts: 1,
+      filesModified: applyResult.filesModified,
+      error: verifyResult.passed ? undefined : `Verification failed (auto-fix disabled)`
+    };
+  }
+  
+  const fixerResult = await runTestFixerLoop(task, ollama, verifyCommand, maxAttempts, settings);
   
   return {
     applySuccess: true,

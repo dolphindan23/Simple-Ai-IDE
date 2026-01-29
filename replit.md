@@ -79,6 +79,63 @@ The agent code editing pipeline includes several reliability enhancements:
   - Validates and applies fixes iteratively
   - Stores all attempt artifacts for debugging
 
+### Trust Hardening System
+The agent code editing pipeline includes comprehensive trust hardening features to ensure safe code changes:
+
+- **Trust Settings** (`shared/schema.ts`): Configurable limits stored in `.simpleaide/settings.json`:
+  - `autoFixEnabled`: Master toggle for auto-fix (default: OFF)
+  - `maxFixAttempts`: Maximum retry attempts for TestFixer (default: 3)
+  - `maxFilesPerPatch`: Maximum files per patch (default: 10)
+  - `maxLinesPerPatch`: Maximum total line changes (default: 500)
+  - `sensitivePaths`: Glob patterns requiring confirmation (default: server/**, scripts/**, .env*, etc.)
+  - `verifyAllowlist`: Commands allowed for verification (plus package.json scripts)
+
+- **Patch Safety Limits** (`server/patchValidator.ts`):
+  - Counts files and lines in each patch
+  - Blocks patches exceeding configured limits
+  - Reports clear "found X, limit Y" errors
+  - All patches validated: initial implement AND TestFixer retries
+
+- **Dangerous Change Detection**:
+  - Detects file deletions and sensitive path edits
+  - Flags `requiresConfirmation` with detailed `dangerSummary`
+  - Blocks auto-apply of dangerous changes in TestFixer loop
+
+- **Confirmation Token System** (`server/routes.ts`):
+  - Server generates signed nonce tokens for dangerous changes
+  - Tokens expire after 10 minutes
+  - HTTP 428 response triggers frontend confirmation dialog
+  - Re-POST with valid token allows application
+
+- **Git Apply Hardening**:
+  - Checks git availability at startup
+  - Uses `--check` dry run before actual apply
+  - Uses `--whitespace=nowarn` to prevent whitespace failures
+  - Resolves repo root directory for consistent cwd
+
+- **Verify Command Allowlist**:
+  - Only commands from settings allowlist or package.json scripts are executed
+  - Never executes model-provided commands directly
+  - Blocks unauthorized command execution
+
+- **Enhanced Artifact Saving**:
+  - `validation_report.json`: Patch validation results per attempt
+  - `applied_files.txt`: List of files modified
+  - `verify_log.txt`: Detailed verification output
+  - `fix_dangerous_X.json`: Logs for blocked dangerous changes
+
+- **Settings UI** (`client/src/components/SettingsModal.tsx`):
+  - Trust tab for configuring all safety limits
+  - Auto-fix toggle with max attempts slider
+  - Max files/lines per patch sliders
+  - Sensitive paths pattern editor
+  - Verify command allowlist editor
+
+- **Dangerous Change Dialog** (`client/src/components/DangerousChangeDialog.tsx`):
+  - Shows deleted files and sensitive path modifications
+  - Requires explicit user confirmation before applying
+  - Displays clear warning with file lists
+
 ### Security
 - **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.
 - **File Permissions**: Strict file permissions (0600) for sensitive files and backups.

@@ -22,6 +22,7 @@ import { SecretsPanel } from "@/components/SecretsPanel";
 import { RunTimeline } from "@/components/RunTimeline";
 import { DatabasePanel } from "@/components/DatabasePanel";
 import { ShellPanel } from "@/components/ShellPanel";
+import { DangerousChangeDialog } from "@/components/DangerousChangeDialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -67,6 +68,12 @@ export default function IDEPage() {
   const [targetFolderPath, setTargetFolderPath] = useState<string>("");
   const [pathToRename, setPathToRename] = useState<string | null>(null);
   const [pathToDelete, setPathToDelete] = useState<string | null>(null);
+  
+  // Dangerous change dialog state
+  const [showDangerDialog, setShowDangerDialog] = useState(false);
+  const [dangerSummary, setDangerSummary] = useState<{ deletedFiles: string[]; sensitiveEdits: string[] } | null>(null);
+  const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
+  const [pendingDiffName, setPendingDiffName] = useState<string>("");
   
   // Persist terminal state
   useEffect(() => {
@@ -460,24 +467,46 @@ export default function IDEPage() {
 
   // Apply diff mutation
   const applyDiffMutation = useMutation({
-    mutationFn: async (diffName: string) => {
+    mutationFn: async (params: { diffName: string; confirmationToken?: string }) => {
       if (!currentTask) throw new Error("No current task");
-      const response = await apiRequest("POST", `/api/tasks/${currentTask.id}/apply`, { diffName });
-      return response.json();
+      const response = await fetch(`/api/tasks/${currentTask.id}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      
+      const data = await response.json();
+      
+      if (response.status === 428) {
+        return { ...data, requiresConfirmation: true, diffName: params.diffName };
+      }
+      
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to apply diff");
+      }
+      
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.requiresConfirmation) {
+        setDangerSummary(data.dangerSummary);
+        setConfirmationToken(data.confirmationToken);
+        setPendingDiffName(data.diffName);
+        setShowDangerDialog(true);
+        return;
+      }
+      
       toast({
         title: "Diff applied successfully",
-        description: "Changes have been applied to your files.",
+        description: `Changes have been applied to your files.${data.filesModified?.length ? ` (${data.filesModified.length} files)` : ""}`,
       });
       refetchFiles();
       if (selectedFile) {
-        // Refresh the current file content
         fetch(`/api/files/content?path=${encodeURIComponent(selectedFile)}`)
           .then((res) => res.json())
-          .then((data) => {
-            if (data.content !== undefined) {
-              setFileContent(data.content);
+          .then((resData) => {
+            if (resData.content !== undefined) {
+              setFileContent(resData.content);
             }
           });
       }
@@ -491,6 +520,15 @@ export default function IDEPage() {
     },
   });
 
+  // Handle dangerous change confirmation
+  const handleConfirmDangerousChange = useCallback((token: string, diffName: string) => {
+    applyDiffMutation.mutate({ diffName, confirmationToken: token });
+    setShowDangerDialog(false);
+    setDangerSummary(null);
+    setConfirmationToken(null);
+    setPendingDiffName("");
+  }, [applyDiffMutation]);
+
   const handleRunTask = (mode: TaskMode, accurateMode?: boolean) => {
     createTaskMutation.mutate({
       repoPath: ".",
@@ -501,7 +539,7 @@ export default function IDEPage() {
   };
 
   const handleApplyDiff = (diffName: string) => {
-    applyDiffMutation.mutate(diffName);
+    applyDiffMutation.mutate({ diffName });
   };
 
   const handleClearLogs = () => {
@@ -636,6 +674,17 @@ export default function IDEPage() {
 
       {/* Settings Modal */}
       <SettingsModal open={showSettingsDialog} onOpenChange={setShowSettingsDialog} />
+
+      {/* Dangerous Change Confirmation Dialog */}
+      <DangerousChangeDialog
+        open={showDangerDialog}
+        onOpenChange={setShowDangerDialog}
+        dangerSummary={dangerSummary}
+        confirmationToken={confirmationToken}
+        diffName={pendingDiffName}
+        onConfirm={handleConfirmDangerousChange}
+        isConfirming={applyDiffMutation.isPending}
+      />
 
       {/* New File Dialog */}
       <Dialog open={showNewFileDialog} onOpenChange={setShowNewFileDialog}>

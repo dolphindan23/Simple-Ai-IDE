@@ -1,11 +1,18 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
+import type { DangerItem, TrustSettings } from "@shared/schema";
 
 export interface PatchValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
   hunks: PatchHunk[];
+  fileCount: number;
+  lineCount: number;
+  requiresConfirmation: boolean;
+  confirmationToken?: string;
+  dangerSummary: DangerItem[];
 }
 
 export interface PatchHunk {
@@ -14,6 +21,82 @@ export interface PatchHunk {
   newPath: string | null;
   isNewFile: boolean;
   isDeleteFile: boolean;
+  lineCount: number;
+}
+
+export interface TrustLimits {
+  maxFilesPerPatch: number;
+  maxLinesPerPatch: number;
+  sensitivePaths: string[];
+}
+
+const DEFAULT_LIMITS: TrustLimits = {
+  maxFilesPerPatch: 10,
+  maxLinesPerPatch: 500,
+  sensitivePaths: [
+    "server/**",
+    "scripts/**",
+    "package.json",
+    "package-lock.json",
+    "*.config.*",
+    ".env*",
+    ".simpleaide/**",
+  ],
+};
+
+const TOKEN_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const TOKEN_EXPIRY_MS = 10 * 60 * 1000;
+const usedTokens = new Set<string>();
+
+setInterval(() => {
+  usedTokens.clear();
+}, TOKEN_EXPIRY_MS);
+
+export function generateConfirmationToken(taskId: string, diffName: string): string {
+  const expiresAt = Date.now() + TOKEN_EXPIRY_MS;
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const payload = `${taskId}:${diffName}:${expiresAt}:${nonce}`;
+  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(payload).digest("hex");
+  return Buffer.from(`${payload}:${signature}`).toString("base64");
+}
+
+export function validateConfirmationToken(token: string, taskId: string, diffName: string): boolean {
+  try {
+    const decoded = Buffer.from(token, "base64").toString("utf-8");
+    const parts = decoded.split(":");
+    if (parts.length !== 5) return false;
+    
+    const [tokenTaskId, tokenDiffName, expiresAtStr, nonce, signature] = parts;
+    const expiresAt = parseInt(expiresAtStr, 10);
+    
+    if (tokenTaskId !== taskId || tokenDiffName !== diffName) return false;
+    if (Date.now() > expiresAt) return false;
+    
+    const payload = `${tokenTaskId}:${tokenDiffName}:${expiresAtStr}:${nonce}`;
+    const expectedSignature = crypto.createHmac("sha256", TOKEN_SECRET).update(payload).digest("hex");
+    
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) return false;
+    
+    const tokenId = `${nonce}:${signature.slice(0, 16)}`;
+    if (usedTokens.has(tokenId)) return false;
+    usedTokens.add(tokenId);
+    
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isConfirmationTokenExpired(token: string): boolean {
+  try {
+    const decoded = Buffer.from(token, "base64").toString("utf-8");
+    const parts = decoded.split(":");
+    if (parts.length !== 5) return true;
+    const expiresAt = parseInt(parts[2], 10);
+    return Date.now() > expiresAt;
+  } catch {
+    return true;
+  }
 }
 
 const UNIFIED_DIFF_HEADER = /^---\s+(.+)$/;
@@ -44,6 +127,26 @@ function isPathTraversal(filePath: string): boolean {
   return false;
 }
 
+function matchesGlobPattern(filePath: string, pattern: string): boolean {
+  const regexPattern = pattern
+    .replace(/\./g, "\\.")
+    .replace(/\*\*/g, "<<<DOUBLESTAR>>>")
+    .replace(/\*/g, "[^/]*")
+    .replace(/<<<DOUBLESTAR>>>/g, ".*")
+    .replace(/\?/g, ".");
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(filePath);
+}
+
+export function isSensitivePath(filePath: string, sensitivePaths: string[]): string | null {
+  for (const pattern of sensitivePaths) {
+    if (matchesGlobPattern(filePath, pattern)) {
+      return pattern;
+    }
+  }
+  return null;
+}
+
 export function parsePatch(diffContent: string): PatchHunk[] {
   const hunks: PatchHunk[] = [];
   const lines = diffContent.split("\n");
@@ -66,12 +169,23 @@ export function parsePatch(diffContent: string): PatchHunk[] {
         const isNewFile = oldPath === "/dev/null";
         const isDeleteFile = newPath === "/dev/null";
         
+        let lineCount = 0;
+        let j = i + 1;
+        while (j < lines.length) {
+          const hunkLine = lines[j];
+          if (hunkLine.startsWith("---") || hunkLine.startsWith("diff ")) break;
+          if (hunkLine.startsWith("+") && !hunkLine.startsWith("+++")) lineCount++;
+          if (hunkLine.startsWith("-") && !hunkLine.startsWith("---")) lineCount++;
+          j++;
+        }
+        
         hunks.push({
           operation: isNewFile ? "create" : isDeleteFile ? "delete" : "modify",
           oldPath: isNewFile ? null : oldPath,
           newPath: isDeleteFile ? null : newPath,
           isNewFile,
           isDeleteFile,
+          lineCount,
         });
       }
     }
@@ -81,28 +195,64 @@ export function parsePatch(diffContent: string): PatchHunk[] {
   return hunks;
 }
 
-export function validatePatch(diffContent: string, repoRoot: string): PatchValidationResult {
+export function validatePatch(
+  diffContent: string, 
+  repoRoot: string, 
+  limits: TrustLimits = DEFAULT_LIMITS,
+  taskId?: string,
+  diffName?: string
+): PatchValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const dangerSummary: DangerItem[] = [];
+  
+  const emptyResult: PatchValidationResult = {
+    valid: false, errors: [], warnings: [], hunks: [],
+    fileCount: 0, lineCount: 0, requiresConfirmation: false, dangerSummary: []
+  };
   
   if (!diffContent || diffContent.trim().length === 0) {
-    return { valid: false, errors: ["Empty diff content"], warnings: [], hunks: [] };
+    return { ...emptyResult, errors: ["Empty diff content"] };
   }
   
   const trimmed = diffContent.trim();
   if (!trimmed.includes("---") || !trimmed.includes("+++")) {
     errors.push("Missing unified diff headers (--- and +++)");
-    return { valid: false, errors, warnings, hunks: [] };
+    return { ...emptyResult, errors };
   }
   
   const hunks = parsePatch(diffContent);
   
   if (hunks.length === 0) {
     errors.push("No valid diff hunks found");
-    return { valid: false, errors, warnings, hunks: [] };
+    return { ...emptyResult, errors };
+  }
+  
+  const fileCount = hunks.length;
+  const lineCount = hunks.reduce((sum, h) => sum + h.lineCount, 0);
+  
+  if (fileCount > limits.maxFilesPerPatch) {
+    errors.push(`Patch modifies too many files: found ${fileCount}, limit ${limits.maxFilesPerPatch}`);
+  }
+  
+  if (lineCount > limits.maxLinesPerPatch) {
+    errors.push(`Patch has too many line changes: found ${lineCount}, limit ${limits.maxLinesPerPatch}`);
   }
   
   for (const hunk of hunks) {
+    const filePath = hunk.newPath || hunk.oldPath;
+    
+    if (hunk.operation === "delete" && hunk.oldPath) {
+      dangerSummary.push({ file: hunk.oldPath, reason: "delete" });
+    }
+    
+    if (filePath) {
+      const sensitiveMatch = isSensitivePath(filePath, limits.sensitivePaths);
+      if (sensitiveMatch) {
+        dangerSummary.push({ file: filePath, reason: "sensitive_path", pattern: sensitiveMatch });
+      }
+    }
+    
     if (hunk.operation === "create") {
       if (!hunk.newPath) {
         errors.push("New file hunk missing target path");
@@ -156,11 +306,23 @@ export function validatePatch(diffContent: string, repoRoot: string): PatchValid
     }
   }
   
+  const requiresConfirmation = dangerSummary.length > 0;
+  let confirmationToken: string | undefined;
+  
+  if (requiresConfirmation && taskId && diffName) {
+    confirmationToken = generateConfirmationToken(taskId, diffName);
+  }
+  
   return {
     valid: errors.length === 0,
     errors,
     warnings,
     hunks,
+    fileCount,
+    lineCount,
+    requiresConfirmation,
+    confirmationToken,
+    dangerSummary,
   };
 }
 

@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { runTask, applyTaskDiff } from "./taskRunner";
+import { runTask, applyTaskDiff, checkGitAvailable, getDefaultTrustSettings, type ApplyDiffOptions, type ApplyDiffResult } from "./taskRunner";
 import { createTaskSchema, settingsSchema, defaultSettings, type Settings, createRunSchema, executeStepSchema, rerunSchema } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
@@ -83,6 +83,28 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Helper to read settings (defined early for use in all routes)
+  function readSettings(): Settings {
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+        const parsed = JSON.parse(data);
+        return settingsSchema.parse(parsed);
+      }
+    } catch (error) {
+      console.error("Error reading settings:", error);
+    }
+    return defaultSettings;
+  }
+
+  // Helper to write settings
+  function writeSettings(settings: Settings): void {
+    if (!fs.existsSync(SETTINGS_DIR)) {
+      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  }
+
   // Setup shell WebSocket
   setupShellWebSocket(httpServer);
 
@@ -204,18 +226,46 @@ export async function registerRoutes(
 
   app.post("/api/tasks/:id/apply", async (req: Request, res: Response) => {
     const taskId = req.params.id as string;
-    const { diffName } = req.body;
+    const { diffName, confirmationToken } = req.body;
     
     if (!diffName) {
       return res.status(400).json({ error: "diffName is required" });
     }
     
-    const result = await applyTaskDiff(taskId, diffName);
+    const settings = readSettings();
+    const trustSettings = settings.trust || getDefaultTrustSettings();
+    
+    const options: ApplyDiffOptions = {
+      confirmationToken,
+      trustSettings,
+    };
+    
+    const result: ApplyDiffResult = await applyTaskDiff(taskId, diffName, options);
+    
+    if (result.requiresConfirmation && !confirmationToken) {
+      return res.status(428).json({
+        success: false,
+        requiresConfirmation: true,
+        confirmationToken: result.confirmationToken,
+        dangerSummary: result.dangerSummary,
+        error: result.error,
+        validationReport: result.validationReport,
+      });
+    }
     
     if (result.success) {
-      res.json({ success: true, message: "Diff applied successfully" });
+      res.json({ 
+        success: true, 
+        message: "Diff applied successfully",
+        filesModified: result.filesModified,
+        validationReport: result.validationReport,
+      });
     } else {
-      res.status(400).json({ success: false, error: result.error });
+      res.status(400).json({ 
+        success: false, 
+        error: result.error,
+        validationReport: result.validationReport,
+      });
     }
   });
 
@@ -453,28 +503,6 @@ export async function registerRoutes(
   // Settings API (Phase B)
   // ============================================
 
-  // Helper to read settings
-  function readSettings(): Settings {
-    try {
-      if (fs.existsSync(SETTINGS_FILE)) {
-        const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
-        const parsed = JSON.parse(data);
-        return settingsSchema.parse(parsed);
-      }
-    } catch (error) {
-      console.error("Error reading settings:", error);
-    }
-    return defaultSettings;
-  }
-
-  // Helper to write settings
-  function writeSettings(settings: Settings): void {
-    if (!fs.existsSync(SETTINGS_DIR)) {
-      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
-    }
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-  }
-
   // Get settings
   app.get("/api/settings", (req: Request, res: Response) => {
     try {
@@ -625,7 +653,7 @@ export async function registerRoutes(
         backends: [],
       };
       try {
-        const settings = loadSettings();
+        const settings = readSettings();
         const backends = settings.aiAgents?.backends || [];
         llmStatus.total = backends.length;
         llmStatus.backends = backends.map((b: any) => ({

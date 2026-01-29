@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Terminal, Code2 } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Plus, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import type { Settings as SettingsType } from "@shared/schema";
 import { useTheme, type Theme } from "./ThemeProvider";
 
@@ -75,7 +76,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-2" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-3" data-testid="settings-tabs">
             <TabsTrigger value="general" className="flex items-center gap-1" data-testid="tab-general">
               <Monitor className="w-4 h-4" />
               General
@@ -83,6 +84,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <TabsTrigger value="editor" className="flex items-center gap-1" data-testid="tab-editor">
               <Code2 className="w-4 h-4" />
               Editor
+            </TabsTrigger>
+            <TabsTrigger value="trust" className="flex items-center gap-1" data-testid="tab-trust">
+              <Shield className="w-4 h-4" />
+              Trust
             </TabsTrigger>
           </TabsList>
 
@@ -265,6 +270,125 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   })}
                   placeholder="JetBrains Mono, monospace"
                   data-testid="input-font-family"
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="trust" className="space-y-4 mt-4" data-testid="panel-trust">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Auto-Fix Enabled</Label>
+                  <p className="text-sm text-muted-foreground">Allow AI to automatically retry failed tests</p>
+                </div>
+                <Switch
+                  checked={settings.trust?.autoFixEnabled ?? false}
+                  onCheckedChange={(checked) => setSettings({
+                    ...settings,
+                    trust: { ...settings.trust!, autoFixEnabled: checked }
+                  })}
+                  data-testid="switch-auto-fix"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Max Fix Attempts</Label>
+                    <p className="text-sm text-muted-foreground">Maximum retry attempts for TestFixer</p>
+                  </div>
+                  <span className="text-sm font-mono">{settings.trust?.maxFixAttempts ?? 3}</span>
+                </div>
+                <Slider
+                  value={[settings.trust?.maxFixAttempts ?? 3]}
+                  onValueChange={([value]) => setSettings({
+                    ...settings,
+                    trust: { ...settings.trust!, maxFixAttempts: value }
+                  })}
+                  min={1}
+                  max={10}
+                  step={1}
+                  disabled={!settings.trust?.autoFixEnabled}
+                  data-testid="slider-max-fix-attempts"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Max Files Per Patch</Label>
+                    <p className="text-sm text-muted-foreground">Maximum files that can be modified</p>
+                  </div>
+                  <span className="text-sm font-mono">{settings.trust?.maxFilesPerPatch ?? 10}</span>
+                </div>
+                <Slider
+                  value={[settings.trust?.maxFilesPerPatch ?? 10]}
+                  onValueChange={([value]) => setSettings({
+                    ...settings,
+                    trust: { ...settings.trust!, maxFilesPerPatch: value }
+                  })}
+                  min={1}
+                  max={50}
+                  step={1}
+                  data-testid="slider-max-files"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Max Lines Per Patch</Label>
+                    <p className="text-sm text-muted-foreground">Maximum total line changes allowed</p>
+                  </div>
+                  <span className="text-sm font-mono">{settings.trust?.maxLinesPerPatch ?? 500}</span>
+                </div>
+                <Slider
+                  value={[settings.trust?.maxLinesPerPatch ?? 500]}
+                  onValueChange={([value]) => setSettings({
+                    ...settings,
+                    trust: { ...settings.trust!, maxLinesPerPatch: value }
+                  })}
+                  min={50}
+                  max={2000}
+                  step={50}
+                  data-testid="slider-max-lines"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Sensitive Paths</Label>
+                <p className="text-sm text-muted-foreground mb-2">Glob patterns for paths requiring confirmation</p>
+                <Textarea
+                  value={(settings.trust?.sensitivePaths ?? []).join("\n")}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    trust: { 
+                      ...settings.trust!, 
+                      sensitivePaths: e.target.value.split("\n").filter(p => p.trim()) 
+                    }
+                  })}
+                  placeholder="server/**&#10;scripts/**&#10;.env*"
+                  className="font-mono text-xs min-h-[80px]"
+                  data-testid="textarea-sensitive-paths"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Verify Command Allowlist</Label>
+                <p className="text-sm text-muted-foreground mb-2">Commands allowed for verification (plus package.json scripts)</p>
+                <Textarea
+                  value={(settings.trust?.verifyAllowlist ?? []).join("\n")}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    trust: { 
+                      ...settings.trust!, 
+                      verifyAllowlist: e.target.value.split("\n").filter(c => c.trim()) 
+                    }
+                  })}
+                  placeholder="npm test&#10;npm run lint&#10;tsc --noEmit"
+                  className="font-mono text-xs min-h-[80px]"
+                  data-testid="textarea-verify-allowlist"
                 />
               </div>
             </div>

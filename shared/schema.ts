@@ -92,6 +92,32 @@ export const aiSettingsSchema = z.object({
   autoSave: z.boolean().default(true),
 });
 
+// Trust and safety settings for agent code editing
+export const trustSettingsSchema = z.object({
+  autoFixEnabled: z.boolean().default(false),
+  maxFixAttempts: z.number().min(1).max(10).default(3),
+  maxFilesPerPatch: z.number().min(1).max(50).default(10),
+  maxLinesPerPatch: z.number().min(10).max(5000).default(500),
+  sensitivePaths: z.array(z.string()).default([
+    "server/**",
+    "scripts/**",
+    "package.json",
+    "package-lock.json",
+    "*.config.*",
+    ".env*",
+    ".simpleaide/**",
+  ]),
+  verifyAllowlist: z.array(z.string()).default([
+    "npm test",
+    "npm run test",
+    "npm run lint",
+    "npm run build",
+    "npm run typecheck",
+  ]),
+});
+
+export type TrustSettings = z.infer<typeof trustSettingsSchema>;
+
 export const generalSettingsSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).default("dark"),
   autoSaveDelay: z.number().min(500).max(10000).default(1000),
@@ -151,6 +177,7 @@ export const settingsSchema = z.object({
   ai: aiSettingsSchema.default({}),
   integrations: integrationSettingsSchema.default({}),
   aiAgents: aiAgentsSettingsSchema.default({}),
+  trust: trustSettingsSchema.default({}),
 });
 
 export type EditorSettings = z.infer<typeof editorSettingsSchema>;
@@ -167,12 +194,25 @@ export const defaultSettings: Settings = settingsSchema.parse({});
 export const stepTypeSchema = z.enum(["plan", "implement", "review", "test", "fix", "verify"]);
 export type StepType = z.infer<typeof stepTypeSchema>;
 
-// Validation result for patch diffs
+// Danger summary item for dangerous changes
+export const dangerItemSchema = z.object({
+  file: z.string(),
+  reason: z.enum(["delete", "sensitive_path"]),
+  pattern: z.string().optional(),
+});
+export type DangerItem = z.infer<typeof dangerItemSchema>;
+
+// Validation result for patch diffs (enhanced with trust features)
 export const patchValidationResultSchema = z.object({
   valid: z.boolean(),
   errors: z.array(z.string()),
   warnings: z.array(z.string()),
   hunkCount: z.number(),
+  fileCount: z.number().default(0),
+  lineCount: z.number().default(0),
+  requiresConfirmation: z.boolean().default(false),
+  confirmationToken: z.string().optional(),
+  dangerSummary: z.array(dangerItemSchema).default([]),
 });
 export type PatchValidationResult = z.infer<typeof patchValidationResultSchema>;
 
