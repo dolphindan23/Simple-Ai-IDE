@@ -20,8 +20,9 @@ The frontend provides a rich interactive development environment. Key components
 - **AI Team Panel**: A sidebar facilitating AI task execution (Plan, Implement, Test, Review) and displaying action cards with model/backend metadata.
 - **AI Agents Panel**: Configuration interface for managing multiple LLM backends and assigning them to specialized roles (Planner, Coder, Reviewer, TestFixer, Doc), each with custom model settings.
 - **Terminal Panel**: A resizable output panel with three states (expanded/collapsed/hidden) for displaying logs and command output.
+- **Shell Panel**: Interactive PTY shell with xterm.js, featuring WebSocket-based communication, auto-resize, and reconnection support. Disabled in PROD mode for security.
 - **Diff Viewer**: Integrated display for reviewing AI-generated code changes before application.
-- **Database Panel**: UI for SQLite database management, including table viewing, inline editing, and SQL execution.
+- **Database Panel**: UI for SQLite database management, including table viewing, inline editing, and SQL execution. Enforces read-only mode in PROD environment (blocks INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/TRUNCATE).
 - **Command Palette**: A quick-access interface (Ctrl+K) for searching files, switching tabs, initiating AI actions, and navigating settings.
 - **Theme Provider**: Supports dark and light themes for the IDE.
 
@@ -33,6 +34,7 @@ The backend provides API services for file system operations, AI orchestration, 
 - **Database Management**: Endpoints for SQLite database operations, including listing databases, table schemas, row manipulation, and raw SQL execution.
 - **Task Runner**: Manages the execution of AI tasks and persistence of task artifacts and runs.
 - **Ollama Integration**: Adapter for interacting with Ollama-compatible LLM backends.
+- **Shell WebSocket Server**: PTY-based shell sessions via WebSocket (/api/shell/ws) using node-pty for spawning pseudo-terminals.
 
 ### Shared Components
 - **Schema**: TypeScript types and Zod schemas for ensuring data consistency between frontend and backend.
@@ -51,6 +53,8 @@ The backend provides API services for file system operations, AI orchestration, 
 - **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.
 - **File Permissions**: Strict file permissions (0600) for sensitive files and backups.
 - **Path Traversal Prevention**: Safeguards against directory traversal attacks.
+- **Environment Detection**: SIMPLEAIDE_ENV overrides NODE_ENV for environment detection (supports "prod"/"production"). Status header shows both values for debugging.
+- **PROD Restrictions**: Database is read-only in PROD (blocks all write operations). Shell access is disabled in PROD.
 
 ## External Dependencies
 - **Ollama**: Local LLM (Large Language Model) backend for AI functionalities. Default `http://localhost:11434` with `codellama` model.
