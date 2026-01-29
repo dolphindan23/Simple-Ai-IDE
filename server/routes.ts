@@ -516,16 +516,56 @@ export async function registerRoutes(
   // Secrets Vault API (Phase C)
   // ============================================
   
-  // In-memory storage for the unlocked vault session
+  // In-memory storage for the unlocked vault session with auto-lock
   let currentVault: any = null;
   let currentMasterPassword: string | null = null;
+  let vaultLastActivity: number = 0;
+  let vaultAutoLockMinutes: number = 15; // 15 minutes default
+  let autoLockTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const resetVaultAutoLock = () => {
+    vaultLastActivity = Date.now();
+    if (autoLockTimer) {
+      clearTimeout(autoLockTimer);
+    }
+    if (currentVault) {
+      autoLockTimer = setTimeout(() => {
+        currentVault = null;
+        currentMasterPassword = null;
+        console.log("[Vault] Auto-locked due to inactivity");
+      }, vaultAutoLockMinutes * 60 * 1000);
+    }
+  };
+
+  const lockVaultNow = () => {
+    currentVault = null;
+    currentMasterPassword = null;
+    if (autoLockTimer) {
+      clearTimeout(autoLockTimer);
+      autoLockTimer = null;
+    }
+  };
 
   // Check if vault exists
   app.get("/api/secrets/status", (req: Request, res: Response) => {
     res.json({
       exists: vaultExists(),
       unlocked: currentVault !== null,
+      autoLockMinutes: vaultAutoLockMinutes,
     });
+  });
+
+  // Configure auto-lock timeout
+  app.put("/api/secrets/autolock", (req: Request, res: Response) => {
+    const { minutes } = req.body;
+    if (typeof minutes !== "number" || minutes < 1 || minutes > 120) {
+      return res.status(400).json({ error: "Minutes must be between 1 and 120" });
+    }
+    vaultAutoLockMinutes = minutes;
+    if (currentVault) {
+      resetVaultAutoLock();
+    }
+    res.json({ success: true, autoLockMinutes: vaultAutoLockMinutes });
   });
 
   // Create vault
@@ -544,6 +584,7 @@ export async function registerRoutes(
       createVault(masterPassword);
       currentVault = unlockVault(masterPassword);
       currentMasterPassword = masterPassword;
+      resetVaultAutoLock();
       
       res.json({ success: true, message: "Vault created and unlocked" });
     } catch (error: any) {
@@ -568,6 +609,7 @@ export async function registerRoutes(
       
       currentVault = vault;
       currentMasterPassword = masterPassword;
+      resetVaultAutoLock();
       
       res.json({ success: true, message: "Vault unlocked" });
     } catch (error: any) {
@@ -577,8 +619,7 @@ export async function registerRoutes(
 
   // Lock vault
   app.post("/api/secrets/lock", (req: Request, res: Response) => {
-    currentVault = null;
-    currentMasterPassword = null;
+    lockVaultNow();
     res.json({ success: true, message: "Vault locked" });
   });
 
@@ -588,6 +629,7 @@ export async function registerRoutes(
       return res.status(401).json({ error: "Vault is locked" });
     }
     
+    resetVaultAutoLock();
     const keys = listSecretKeys(currentVault);
     const secrets = keys.map(key => ({
       key,
@@ -603,6 +645,7 @@ export async function registerRoutes(
       return res.status(401).json({ error: "Vault is locked" });
     }
     
+    resetVaultAutoLock();
     const key = req.params.key as string;
     const value = currentVault.secrets[key];
     
@@ -619,6 +662,7 @@ export async function registerRoutes(
       return res.status(401).json({ error: "Vault is locked" });
     }
     
+    resetVaultAutoLock();
     try {
       const key = req.params.key as string;
       const { value } = req.body;
@@ -642,6 +686,7 @@ export async function registerRoutes(
       return res.status(401).json({ error: "Vault is locked" });
     }
     
+    resetVaultAutoLock();
     try {
       const key = req.params.key as string;
       const deleted = deleteSecret(currentVault, key);

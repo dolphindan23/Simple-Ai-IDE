@@ -54,7 +54,7 @@ export function vaultExists(): boolean {
 
 export function createVault(masterPassword: string): void {
   if (!fs.existsSync(SECRETS_DIR)) {
-    fs.mkdirSync(SECRETS_DIR, { recursive: true });
+    fs.mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
   }
   
   const vault: SecretsVault = {
@@ -64,7 +64,14 @@ export function createVault(masterPassword: string): void {
   };
   
   const encrypted = encrypt(JSON.stringify(vault), masterPassword);
-  fs.writeFileSync(SECRETS_FILE, encrypted);
+  fs.writeFileSync(SECRETS_FILE, encrypted, { mode: 0o600 });
+  
+  // Ensure permissions are set correctly on Unix systems
+  try {
+    fs.chmodSync(SECRETS_FILE, 0o600);
+  } catch {
+    // Ignore chmod errors on non-Unix systems
+  }
 }
 
 export function unlockVault(masterPassword: string): SecretsVault | null {
@@ -83,12 +90,19 @@ export function unlockVault(masterPassword: string): SecretsVault | null {
 
 export function saveVault(vault: SecretsVault, masterPassword: string): void {
   if (!fs.existsSync(SECRETS_DIR)) {
-    fs.mkdirSync(SECRETS_DIR, { recursive: true });
+    fs.mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
   }
   
   vault.updatedAt = new Date().toISOString();
   const encrypted = encrypt(JSON.stringify(vault), masterPassword);
-  fs.writeFileSync(SECRETS_FILE, encrypted);
+  fs.writeFileSync(SECRETS_FILE, encrypted, { mode: 0o600 });
+  
+  // Ensure permissions are set correctly on Unix systems
+  try {
+    fs.chmodSync(SECRETS_FILE, 0o600);
+  } catch {
+    // Ignore chmod errors on non-Unix systems
+  }
 }
 
 export function getSecret(vault: SecretsVault, key: string): string | undefined {
@@ -116,4 +130,52 @@ export function maskSecret(value: string): string {
     return "****";
   }
   return value.slice(0, 2) + "..." + value.slice(-2);
+}
+
+// Known secret key patterns to redact from logs
+const SECRET_KEY_PATTERNS = [
+  /api[_-]?key/i,
+  /secret/i,
+  /token/i,
+  /password/i,
+  /auth/i,
+  /credential/i,
+  /private[_-]?key/i,
+  /bearer/i,
+];
+
+// Redact secrets from log output to prevent accidental exposure
+export function redactSecrets(input: string): string {
+  let redacted = input;
+  
+  // Redact common secret patterns like "key": "value" or key=value
+  redacted = redacted.replace(
+    /(["']?(?:api[_-]?key|secret|token|password|auth|credential|private[_-]?key|bearer)[_a-z0-9]*["']?\s*[=:]\s*["']?)([^"'\s,}\]]+)(["']?)/gi,
+    "$1[REDACTED]$3"
+  );
+  
+  // Redact Bearer tokens
+  redacted = redacted.replace(
+    /(Bearer\s+)([A-Za-z0-9._-]+)/gi,
+    "$1[REDACTED]"
+  );
+  
+  // Redact Basic auth
+  redacted = redacted.replace(
+    /(Basic\s+)([A-Za-z0-9+/=]+)/gi,
+    "$1[REDACTED]"
+  );
+  
+  // Redact long alphanumeric strings that look like API keys (32+ chars)
+  redacted = redacted.replace(
+    /(['"=:\s])([A-Za-z0-9]{32,})(['"\s,}\]]|$)/g,
+    "$1[REDACTED]$3"
+  );
+  
+  return redacted;
+}
+
+// Check if a key name looks like a secret
+export function isSecretKey(keyName: string): boolean {
+  return SECRET_KEY_PATTERNS.some(pattern => pattern.test(keyName));
 }
