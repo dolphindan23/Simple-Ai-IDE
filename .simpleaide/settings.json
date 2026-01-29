@@ -30,12 +30,58 @@
     "backends": [
       {
         "id": "backend_1769692276258",
-        "name": "Test Ollama",
+        "name": "DGX Local",
         "baseUrl": "https://192.168.8.227:11434",
+        "authType": "none"
+      },
+      {
+        "id": "backend_1769697428667",
+        "name": "croptech",
+        "baseUrl": "https://ollama.croptech.ai",
+        "authType": "none"
+      },
+      {
+        "id": "backend_1769697496471",
+        "name": "gpu-serv",
+        "baseUrl": "https://gpuserv.croptech.ai",
+        "authType": "none"
+      },
+      {
+        "id": "backend_1769697641770",
+        "name": "Local Local",
+        "baseUrl": "http://localhost:11434",
+        "authType": "none"
+      },
+      {
+        "id": "backend_1769697669205",
+        "name": "Local Llama",
+        "baseUrl": "https://127.0.0.1:11434",
         "authType": "none"
       }
     ],
     "defaultBackendId": "backend_1769692276258",
     "roles": {}
+  },
+  "trust": {
+    "autoFixEnabled": false,
+    "maxFixAttempts": 3,
+    "maxFilesPerPatch": 10,
+    "maxLinesPerPatch": 500,
+    "sensitivePaths": [
+      "server/**",
+      "scripts/**",
+      "package.json",
+      "package-lock.json",
+      "*.config.*",
+      ".env*",
+      ".simpleaide/**"
+    ],
+    "verifyAllowlist": [
+      "npm test",
+      "npm run test",
+      "npm run lint",
+      "npm run build",
+      "npm run typecheck"
+    ]
   }
 }
