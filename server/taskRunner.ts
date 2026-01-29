@@ -74,7 +74,8 @@ function applyDiff(cwd: string, diffContent: string): { success: boolean; error?
 }
 
 async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
-  log(task.id, "[INFO] Starting plan generation...\n");
+  const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  log(task.id, `[INFO] Starting plan generation... (${modeLabel} mode)\n`);
   
   const prompt = `You are a senior software architect. Analyze this goal and create a detailed implementation plan.
 
@@ -143,7 +144,8 @@ Format as JSON with structure:
 }
 
 async function runImplementMode(task: Task, ollama: OllamaAdapter): Promise<void> {
-  log(task.id, "[INFO] Starting implementation...\n");
+  const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  log(task.id, `[INFO] Starting implementation... (${modeLabel} mode)\n`);
   
   const prompt = `You are an expert programmer. Implement the following:
 
@@ -208,7 +210,8 @@ ${response.split('\n').map(line => '+' + line).join('\n')}
 }
 
 async function runReviewMode(task: Task, ollama: OllamaAdapter): Promise<void> {
-  log(task.id, "[INFO] Starting code review...\n");
+  const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  log(task.id, `[INFO] Starting code review... (${modeLabel} mode)\n`);
   
   const prompt = `You are a senior code reviewer. Review the following goal/changes:
 
@@ -265,7 +268,8 @@ ${task.goal}
 }
 
 async function runTestMode(task: Task, ollama: OllamaAdapter): Promise<void> {
-  log(task.id, "[INFO] Running tests...\n");
+  const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  log(task.id, `[INFO] Running tests... (${modeLabel} mode)\n`);
   
   // Try to run pytest if available
   const cwd = path.resolve(task.repoPath);

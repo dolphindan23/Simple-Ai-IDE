@@ -30,6 +30,7 @@ export const taskSchema = z.object({
   status: z.enum(["queued", "running", "done", "error"]),
   createdAt: z.string(),
   error: z.string().optional(),
+  accurateMode: z.boolean().default(false),
 });
 
 export type Task = z.infer<typeof taskSchema>;
@@ -38,6 +39,7 @@ export const createTaskSchema = z.object({
   repoPath: z.string().default("."),
   goal: z.string().min(1, "Goal is required"),
   mode: z.enum(["plan", "implement", "review", "test"]).default("implement"),
+  accurateMode: z.boolean().default(false),
 });
 
 export type CreateTask = z.infer<typeof createTaskSchema>;

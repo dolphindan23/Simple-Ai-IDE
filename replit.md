@@ -18,7 +18,10 @@ SimpleAide is a minimal, Replit-style coding workspace with an AI-powered multi-
 - **Diff-First Approach**: AI generates diffs that users can review and apply
 - **AI Orchestration**: Configurable AI backends via AI Agents panel with role-based routing and fallback
 - **Dark/Light Theme**: Toggle between themes
-- **Keyboard Shortcuts**: Ctrl+S save, Ctrl+J toggle terminal, Ctrl+` show/focus terminal
+- **Keyboard Shortcuts**: Ctrl+S save, Ctrl+J toggle terminal, Ctrl+` show/focus terminal, Ctrl+K command palette
+- **Command Palette**: Quick access to files, tabs, AI actions, and settings (Ctrl+K)
+- **File Tree Hover Actions**: Rename, delete, copy path for files; new file/folder for folders
+- **Fast/Accurate Toggle**: Switch between fast and accurate AI model configurations
 
 ## Architecture
 
@@ -27,7 +30,8 @@ SimpleAide is a minimal, Replit-style coding workspace with an AI-powered multi-
 client/src/
 ├── components/
 │   ├── AIAgentsPanel.tsx    # AI backends and roles configuration
-│   ├── AITeamPanel.tsx      # AI workflow sidebar
+│   ├── AITeamPanel.tsx      # AI workflow sidebar with action cards
+│   ├── CommandPalette.tsx   # Command palette (Ctrl+K)
 │   ├── CodeEditor.tsx       # Monaco editor wrapper
 │   ├── DiffViewer.tsx       # Unified diff display
 │   ├── FileTree.tsx         # Project file browser
@@ -194,6 +198,10 @@ The app serves on port 8521 with both frontend and backend.
 - 2026-01-29: Phase D1 - Workflow Engine with checkpoints: Added TaskRun/StepRun types, file-based runs storage (.simpleaide/runs/), REST APIs for run management (create, list, execute step, rerun from checkpoint), Run Timeline UI with step status visualization and artifact viewing
 - 2026-01-29: Phase D2 - Autonomous test/fix loop: Added auto workflow (Plan→Code→Apply→Test→Fix chain), file backup/restore for safe diff application, TestFixer retry loop (max 3 attempts), Apply Diff buttons in UI
 - 2026-01-29: Phase D2 Security - Added path traversal prevention (isPathSafe/sanitizePath), diff header validation before apply, concurrent run protection (runningWorkflows Set), chmod 0600 on all modified/backup/restored files
+- 2026-01-29: UX1 - File tree hover actions (rename, delete, copy path for files; new file/folder for folders), Command Palette (Ctrl+K) with file search, tab switching, AI actions, settings navigation
+- 2026-01-29: UX1 - Editor typography defaults (JetBrains Mono, fontSize 14, lineHeight 1.55)
+- 2026-01-29: UX2 - AI Team Action Cards with collapsible state, model/backend + latency metadata display, inline mini-diff preview with View Full Diff button
+- 2026-01-29: UX2 - Fast/Accurate toggle for AI task execution routing to different model configurations
 
 ## Workflow Engine (Phase D)
 

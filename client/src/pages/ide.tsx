@@ -443,6 +443,7 @@ export default function IDEPage() {
       repoPath: ".",
       goal,
       mode,
+      accurateMode: accurateMode ?? false,
     });
   };
 

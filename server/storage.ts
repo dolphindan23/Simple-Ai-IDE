@@ -62,6 +62,7 @@ export class MemStorage implements IStorage {
       mode: data.mode || "implement",
       status: "queued",
       createdAt: new Date().toISOString(),
+      accurateMode: data.accurateMode ?? false,
     };
     this.tasks.set(id, task);
     this.taskLogs.set(id, []);
