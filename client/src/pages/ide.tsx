@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction } from "lucide-react";
+import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
 
 export default function IDEPage() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, cycleTheme } = useTheme();
   const { toast } = useToast();
   const terminalRef = useRef<HTMLDivElement>(null);
   
@@ -618,13 +618,16 @@ export default function IDEPage() {
           <Button
             variant="ghost"
             className="h-5 w-5 p-0"
-            onClick={toggleTheme}
+            onClick={cycleTheme}
             data-testid="button-toggle-theme"
+            title={`Theme: ${theme === "light" ? "Light" : theme === "dark" ? "Dark" : "Terminal Noir"}`}
           >
-            {theme === "dark" ? (
+            {theme === "light" ? (
               <Sun className="h-2.5 w-2.5" />
-            ) : (
+            ) : theme === "dark" ? (
               <Moon className="h-2.5 w-2.5" />
+            ) : (
+              <Monitor className="h-2.5 w-2.5" />
             )}
           </Button>
         </div>

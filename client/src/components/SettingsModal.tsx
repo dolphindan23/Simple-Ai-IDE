@@ -89,15 +89,16 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   value={settings.general.theme}
                   onValueChange={(value) => setSettings({
                     ...settings,
-                    general: { ...settings.general, theme: value as "light" | "dark" | "system" }
+                    general: { ...settings.general, theme: value as "light" | "dark" | "terminal-noir" | "system" }
                   })}
                 >
-                  <SelectTrigger className="w-[140px]" data-testid="select-theme">
+                  <SelectTrigger className="w-[160px]" data-testid="select-theme">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="light"><div className="flex items-center gap-2"><Sun className="w-4 h-4" /> Light</div></SelectItem>
                     <SelectItem value="dark"><div className="flex items-center gap-2"><Moon className="w-4 h-4" /> Dark</div></SelectItem>
+                    <SelectItem value="terminal-noir"><div className="flex items-center gap-2"><Monitor className="w-4 h-4" /> Terminal Noir</div></SelectItem>
                     <SelectItem value="system"><div className="flex items-center gap-2"><Monitor className="w-4 h-4" /> System</div></SelectItem>
                   </SelectContent>
                 </Select>

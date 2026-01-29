@@ -1,6 +1,7 @@
-import Editor, { OnMount } from "@monaco-editor/react";
+import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import { useTheme } from "./ThemeProvider";
 import { Loader2 } from "lucide-react";
+import { defineTerminalNoirTheme, TERMINAL_NOIR_THEME_NAME } from "@/monaco/terminalNoirTheme";
 
 interface CodeEditorProps {
   value: string;
@@ -38,27 +39,17 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
     return languageMap[ext || ""] || "plaintext";
   };
 
-  const handleEditorMount: OnMount = (editor, monaco) => {
-    // Configure editor options
-    editor.updateOptions({
-      minimap: { enabled: true, scale: 0.8 },
-      scrollBeyondLastLine: false,
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      fontLigatures: true,
-      lineHeight: 1.55,
-      lineNumbers: "on",
-      renderLineHighlight: "all",
-      cursorBlinking: "smooth",
-      cursorSmoothCaretAnimation: "on",
-      smoothScrolling: true,
-      padding: { top: 12 },
-      bracketPairColorization: { enabled: true },
-      wordWrap: "off",
-      tabSize: 2,
-    });
+  const getMonacoTheme = () => {
+    switch (theme) {
+      case "terminal-noir": return TERMINAL_NOIR_THEME_NAME;
+      case "light": return "simpleaide-light";
+      default: return "simpleaide-dark";
+    }
+  };
 
-    // Define custom dark theme
+  const handleBeforeMount: BeforeMount = (monaco) => {
+    defineTerminalNoirTheme(monaco);
+
     monaco.editor.defineTheme("simpleaide-dark", {
       base: "vs-dark",
       inherit: true,
@@ -83,7 +74,6 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
       },
     });
 
-    // Define custom light theme
     monaco.editor.defineTheme("simpleaide-light", {
       base: "vs",
       inherit: true,
@@ -106,8 +96,26 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
         "editorLineNumber.activeForeground": "#475569",
       },
     });
+  };
 
-    monaco.editor.setTheme(theme === "dark" ? "simpleaide-dark" : "simpleaide-light");
+  const handleEditorMount: OnMount = (editor) => {
+    editor.updateOptions({
+      minimap: { enabled: true, scale: 0.8 },
+      scrollBeyondLastLine: false,
+      fontSize: 14,
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontLigatures: true,
+      lineHeight: 1.55,
+      lineNumbers: "on",
+      renderLineHighlight: "all",
+      cursorBlinking: "smooth",
+      cursorSmoothCaretAnimation: "on",
+      smoothScrolling: true,
+      padding: { top: 12 },
+      bracketPairColorization: { enabled: true },
+      wordWrap: "off",
+      tabSize: 2,
+    });
   };
 
   return (
@@ -116,7 +124,8 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
       defaultLanguage={language || getLanguageFromPath(path)}
       value={value}
       onChange={onChange}
-      theme={theme === "dark" ? "simpleaide-dark" : "simpleaide-light"}
+      theme={getMonacoTheme()}
+      beforeMount={handleBeforeMount}
       onMount={handleEditorMount}
       loading={
         <div className="flex items-center justify-center h-full bg-background">
