@@ -168,6 +168,10 @@ export class RunsStorage {
     );
 
     run.metadata.stepCount = stepNumber;
+    // Update run status to "running" when first step is created
+    if (run.metadata.status === "pending") {
+      run.metadata.status = "running";
+    }
     this.saveRunMetadata(runId, run.metadata);
 
     return step;
@@ -349,6 +353,41 @@ export class RunsStorage {
     }
 
     return steps.sort((a, b) => a.stepNumber - b.stepNumber);
+  }
+
+  // Helper methods for global status
+
+  async getActiveRunCount(): Promise<number> {
+    const runs = await this.listRuns();
+    return runs.filter(r => r.status === "running" || r.status === "pending").length;
+  }
+
+  async getLatestRunSummary(): Promise<{
+    id: string;
+    status: RunStatus;
+    startedAt: string;
+    completedAt?: string;
+    goal: string;
+    ageMs: number;
+  } | null> {
+    const runs = await this.listRuns();
+    if (!runs.length) return null;
+    
+    const r = runs[0];
+    const ageMs = Date.now() - new Date(r.startedAt).getTime();
+    
+    return {
+      id: r.id,
+      status: r.status,
+      startedAt: r.startedAt,
+      completedAt: r.completedAt,
+      goal: r.goal,
+      ageMs,
+    };
+  }
+
+  async isBusy(): Promise<boolean> {
+    return (await this.getActiveRunCount()) > 0;
   }
 }
 

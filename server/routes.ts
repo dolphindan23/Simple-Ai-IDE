@@ -558,6 +558,88 @@ export async function registerRoutes(
     });
   });
 
+  // ==================== GLOBAL STATUS ENDPOINT ====================
+  app.get("/api/status", async (req: Request, res: Response) => {
+    try {
+      // Environment (DEV for now, PROD support coming)
+      const env = process.env.SIMPLEAIDE_ENV === "prod" ? "PROD" : "DEV";
+      
+      // Runs status
+      const activeRunCount = await runsStorage.getActiveRunCount();
+      const latestRun = await runsStorage.getLatestRunSummary();
+      const busy = await runsStorage.isBusy();
+      
+      // Vault status
+      const vaultStatus = {
+        exists: vaultExists(),
+        locked: currentVault === null,
+        autoLockMinutes: vaultAutoLockMinutes,
+        autoLockRemainingMs: currentVault && vaultLastActivity > 0
+          ? Math.max(0, (vaultLastActivity + vaultAutoLockMinutes * 60 * 1000) - Date.now())
+          : null,
+      };
+      
+      // Database status
+      let dbStatus: { connected: boolean; count: number; type: string } = {
+        connected: false,
+        count: 0,
+        type: "sqlite",
+      };
+      try {
+        const databases = db.listDatabases();
+        dbStatus = {
+          connected: true,
+          count: databases.length,
+          type: "sqlite",
+        };
+      } catch {
+        // Database not available
+      }
+      
+      // LLM backends status
+      let llmStatus: { online: number; total: number; backends: Array<{ id: string; name: string; online: boolean }> } = {
+        online: 0,
+        total: 0,
+        backends: [],
+      };
+      try {
+        const settings = loadSettings();
+        const backends = settings.aiAgents?.backends || [];
+        llmStatus.total = backends.length;
+        llmStatus.backends = backends.map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          online: true, // We don't have real health checks yet, assume online if configured
+        }));
+        llmStatus.online = backends.length; // Assume all online for now
+      } catch {
+        // No settings
+      }
+      
+      // Server info
+      const serverInfo = {
+        port: process.env.PORT || 5000,
+        nodeEnv: process.env.NODE_ENV || "development",
+        uptime: process.uptime(),
+      };
+      
+      res.json({
+        env,
+        server: serverInfo,
+        runs: {
+          active: activeRunCount,
+          busy,
+          last: latestRun,
+        },
+        vault: vaultStatus,
+        db: dbStatus,
+        llm: llmStatus,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Configure auto-lock timeout
   app.put("/api/secrets/autolock", (req: Request, res: Response) => {
     const { minutes } = req.body;
