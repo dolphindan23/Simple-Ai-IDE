@@ -33,6 +33,45 @@ const ROLE_DESCRIPTIONS: Record<AgentRole, string> = {
   Doc: "Generates documentation and comments",
 };
 
+// Role-to-model-type capability hints
+const ROLE_CAPABILITY_HINTS: Record<AgentRole, { primary: string[]; secondary: string[]; hint: string }> = {
+  Planner: {
+    primary: ["general", "reasoning"],
+    secondary: ["tool"],
+    hint: "General models excel at breaking down tasks; reasoning models help with complex planning",
+  },
+  Coder: {
+    primary: ["code"],
+    secondary: ["general"],
+    hint: "Code-tuned models produce the cleanest diffs and lowest hallucination rates",
+  },
+  Reviewer: {
+    primary: ["reasoning", "general"],
+    secondary: ["code"],
+    hint: "Reasoning models catch subtle bugs; general models provide clearer explanations",
+  },
+  TestFixer: {
+    primary: ["code", "reasoning"],
+    secondary: [],
+    hint: "Code models fix syntax errors; reasoning models help with tricky test failures",
+  },
+  Doc: {
+    primary: ["general"],
+    secondary: ["code"],
+    hint: "General models write clearer documentation; code models ensure technical accuracy",
+  },
+};
+
+// Type colors for capability badges (matches ModelCatalog)
+const TYPE_BADGE_COLORS: Record<string, string> = {
+  code: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  general: "bg-green-500/20 text-green-400 border-green-500/30",
+  reasoning: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+  vision: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  tool: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  embed: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+};
+
 interface BackendTestResult {
   success: boolean;
   models?: string[];
@@ -659,12 +698,39 @@ export function AIAgentsPanel() {
                   <Card key={role} className="p-4" data-testid={`role-card-${role}`}>
                     <div className="space-y-4">
                       <div className="flex items-start justify-between">
-                        <div>
+                        <div className="space-y-1.5">
                           <h4 className="font-medium flex items-center gap-2">
                             <Bot className="w-4 h-4" />
                             {role}
                           </h4>
                           <p className="text-sm text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</p>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-[10px] text-muted-foreground">Best with:</span>
+                            {ROLE_CAPABILITY_HINTS[role].primary.map(type => (
+                              <Badge 
+                                key={type}
+                                variant="outline" 
+                                className={`text-[9px] px-1 py-0 h-4 ${TYPE_BADGE_COLORS[type]}`}
+                              >
+                                {type}
+                              </Badge>
+                            ))}
+                            {ROLE_CAPABILITY_HINTS[role].secondary.length > 0 && (
+                              <>
+                                <span className="text-[10px] text-muted-foreground opacity-60">or</span>
+                                {ROLE_CAPABILITY_HINTS[role].secondary.map(type => (
+                                  <Badge 
+                                    key={type}
+                                    variant="outline" 
+                                    className={`text-[9px] px-1 py-0 h-4 opacity-60 ${TYPE_BADGE_COLORS[type]}`}
+                                  >
+                                    {type}
+                                  </Badge>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground italic">{ROLE_CAPABILITY_HINTS[role].hint}</p>
                         </div>
                       </div>
 
