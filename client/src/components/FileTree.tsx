@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Pencil, Trash2, Copy, FilePlus, FolderPlus } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Pencil, Trash2, Copy, FilePlus, FolderPlus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FileNode } from "@shared/schema";
 
@@ -223,7 +224,52 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
   );
 }
 
+function filterFileTree(nodes: FileNode[], searchTerm: string): FileNode[] {
+  if (!searchTerm.trim()) return nodes;
+  
+  const term = searchTerm.toLowerCase();
+  
+  function nodeMatches(node: FileNode): boolean {
+    if (node.name.toLowerCase().includes(term)) return true;
+    if (node.path.toLowerCase().includes(term)) return true;
+    if (node.children) {
+      return node.children.some(child => nodeMatches(child));
+    }
+    return false;
+  }
+  
+  function filterNode(node: FileNode): FileNode | null {
+    if (node.type === "file") {
+      return node.name.toLowerCase().includes(term) || node.path.toLowerCase().includes(term) ? node : null;
+    }
+    
+    const filteredChildren = node.children
+      ?.map(child => filterNode(child))
+      .filter((child): child is FileNode => child !== null);
+    
+    if (filteredChildren && filteredChildren.length > 0) {
+      return { ...node, children: filteredChildren };
+    }
+    
+    if (node.name.toLowerCase().includes(term)) {
+      return node;
+    }
+    
+    return null;
+  }
+  
+  return nodes
+    .map(node => filterNode(node))
+    .filter((node): node is FileNode => node !== null);
+}
+
 export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder }: FileTreeProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  
+  const filteredFiles = useMemo(() => {
+    return filterFileTree(files, searchTerm);
+  }, [files, searchTerm]);
+  
   if (files.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm p-4">
@@ -234,21 +280,53 @@ export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete
   }
 
   return (
-    <div className="py-1 scrollbar-thin overflow-auto h-full">
-      {files.map((node) => (
-        <FileTreeNode
-          key={node.path}
-          node={node}
-          depth={0}
-          selectedPath={selectedPath}
-          onSelectFile={onSelectFile}
-          onRename={onRename}
-          onDelete={onDelete}
-          onCopyPath={onCopyPath}
-          onNewFile={onNewFile}
-          onNewFolder={onNewFolder}
-        />
-      ))}
+    <div className="flex flex-col h-full">
+      <div className="px-2 py-1.5 border-b border-sidebar-border">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search files..."
+            className="h-7 pl-7 pr-7 text-xs"
+            data-testid="input-search-files"
+          />
+          {searchTerm && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-5 w-5"
+              onClick={() => setSearchTerm("")}
+              data-testid="button-clear-search"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="py-1 scrollbar-thin overflow-auto flex-1">
+        {filteredFiles.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground text-xs">
+            <Search className="h-6 w-6 mb-2 opacity-50" />
+            <p>No files match "{searchTerm}"</p>
+          </div>
+        ) : (
+          filteredFiles.map((node) => (
+            <FileTreeNode
+              key={node.path}
+              node={node}
+              depth={0}
+              selectedPath={selectedPath}
+              onSelectFile={onSelectFile}
+              onRename={onRename}
+              onDelete={onDelete}
+              onCopyPath={onCopyPath}
+              onNewFile={onNewFile}
+              onNewFolder={onNewFolder}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
