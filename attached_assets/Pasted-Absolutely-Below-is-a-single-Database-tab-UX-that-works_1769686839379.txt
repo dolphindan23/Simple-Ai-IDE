@@ -1,0 +1,267 @@
+Absolutely. Below is a **single Database tab UX** that works **seamlessly for both SQLite and PostgreSQL**, without clutter, and that scales from “local toy DB” → “real production system”.
+
+This is a **product-level design**, not just UI widgets, so you can hand it directly to the agent.
+
+---
+
+# Unified Database Tab UX (SQLite + PostgreSQL)
+
+## Core principle
+
+> **Tables first. SQL second. Environments always visible. Danger always obvious.**
+
+The user should almost never *need* to think about whether it’s SQLite or Postgres —
+**until it matters**, at which point the UI makes the difference obvious.
+
+---
+
+## High-level layout (single screen)
+
+```
+┌───────────────────────────────────────────────────────────┐
+│ Database  ▾  |  Environment: DEV 🟢  |  SQLite / Postgres │
+├───────────────┬───────────────────────────────────────────┤
+│ Tables        │  Table: users                              │
+│───────────────│───────────────────────────────────────────│
+│ users         │  [ Grid View | SQL View ]   [ Read-only 🔒 ]│
+│ sessions      │───────────────────────────────────────────│
+│ orders        │  ┌─────────── Spreadsheet Grid ──────────┐ │
+│ logs          │  │ id | email | role | created_at        │ │
+│               │  │----+-------+------+------------------│ │
+│               │  │ 1  | a@x   | admin| 2026-01-01        │ │
+│               │  │ 2  | b@y   | user | 2026-01-02        │ │
+│               │  └──────────────────────────────────────┘ │
+│               │  [+ Add Row]  [Delete]  [Save Changes]    │
+└───────────────┴───────────────────────────────────────────┘
+```
+
+No popups. No extra panels. Everything is **progressive disclosure**.
+
+---
+
+## 1. Database selector (top-left, tiny but critical)
+
+### Behavior
+
+* If **only SQLite exists** → auto-selected, no dropdown
+* If **multiple DBs exist** → dropdown
+
+**Label example**
+
+* `Database ▾  (app.db)`
+* `Database ▾  (Postgres: myapp_dev)`
+
+### Why this works
+
+* SQLite feels instant
+* Postgres feels explicit and “real”
+* No confusion about where data lives
+
+---
+
+## 2. Environment toggle (always visible)
+
+Right next to Database selector:
+
+```
+Environment:  DEV 🟢   |   PROD 🔴 (locked)
+```
+
+### Rules
+
+* **SQLite**
+
+  * Always DEV
+  * No PROD toggle shown
+* **Postgres**
+
+  * DEV = full CRUD
+  * PROD = read-only by default
+
+### UX details
+
+* PROD is **red**
+* Switching to PROD shows:
+
+  > “Production data is read-only unless unlocked.”
+
+This alone prevents 90% of accidents.
+
+---
+
+## 3. Tables sidebar (left, minimal intelligence)
+
+### Contents
+
+* List of tables
+* Icons:
+
+  * 📄 regular table
+  * 🔗 foreign-key-heavy table
+* Search filter (inline, no modal)
+
+### Smart behavior
+
+* Bold = currently selected table
+* Auto-refresh when schema changes
+* SQLite: detect tables from file
+* Postgres: query `information_schema`
+
+---
+
+## 4. Main panel: **Grid-first, SQL-second**
+
+This is the heart of the UX.
+
+### Default: Grid View (Sheets-like)
+
+* Rows = records
+* Columns = fields
+* Inline edit (DEV only)
+* Pagination (never load whole table)
+* Filters per column
+* Sort by clicking headers
+
+### Editing rules
+
+* DEV:
+
+  * inline edit
+  * add row
+  * delete row
+* PROD:
+
+  * read-only
+  * no inline editing
+  * no destructive buttons
+
+### Safety affordances
+
+* Primary key column visually pinned
+* Changed cells highlighted
+* Save button only appears when dirty
+
+---
+
+## 5. SQL View (power users, secondary)
+
+Toggle button:
+
+```
+[ Grid View | SQL View ]
+```
+
+### SQL View behavior
+
+* Shows generated SQL for grid edits (optional)
+* Allows manual queries:
+
+  * SQLite: full SQL
+  * Postgres:
+
+    * DEV: full SQL
+    * PROD: SELECT-only unless unlocked
+
+### Results
+
+* Query results render in **same grid**
+* No separate result window → no context switch
+
+---
+
+## 6. SQLite-specific behavior (automatic, invisible)
+
+When DB = SQLite:
+
+* No credentials UI
+* No environment toggle
+* Auto-detect `.db` files in project
+* Auto-reload on file change
+
+**Feels like magic.**
+
+---
+
+## 7. PostgreSQL-specific behavior (explicit, safe)
+
+When DB = Postgres:
+
+* Connection info stored in Settings
+* DEV / PROD clearly separated
+* PROD unlock requires:
+
+  * confirmation
+  * optional password re-entry
+  * time-limited unlock (e.g. 10 min)
+
+---
+
+## 8. What NOT to add (very important)
+
+Do **not** add:
+
+* Schema migration UI
+* DB user management
+* Index editors
+* Replication settings
+
+That’s how you become pgAdmin. You don’t want that.
+
+---
+
+# Backend API (simple, unified)
+
+Your agent only needs **one abstraction layer**.
+
+```
+GET    /api/db/list
+GET    /api/db/:env/tables
+GET    /api/db/:env/schema/:table
+GET    /api/db/:env/rows/:table
+POST   /api/db/:env/rows/:table
+PUT    /api/db/:env/rows/:table/:pk
+DELETE /api/db/:env/rows/:table/:pk
+POST   /api/db/:env/query
+```
+
+Backend handles:
+
+* SQLite vs Postgres
+* Safety rules
+* Param binding
+* Read-only enforcement
+
+Frontend never cares.
+
+---
+
+## How to tell the agent (copy/paste spec)
+
+> Design a single Database tab that works for both SQLite and PostgreSQL.
+>
+> Rules:
+>
+> * Grid-first UI (spreadsheet-like); SQL is secondary.
+> * SQLite is auto-detected, zero-config, DEV-only.
+> * PostgreSQL has explicit DEV/PROD environments; PROD is read-only by default.
+> * Table list on the left, grid editor in main panel.
+> * Inline edits, add/delete rows only in DEV.
+> * SQL View toggle reuses the same grid for results.
+> * No advanced DB admin features.
+>
+> Goal: feel like “Google Sheets for tables”, not pgAdmin.
+
+---
+
+## Why this design is strong
+
+* One mental model
+* Zero clutter
+* Safe by default
+* Powerful when needed
+* Scales from hobby → production
+
+If you want, next I can:
+
+* design **exact column behaviors** (JSON, enums, dates)
+* or help you choose **SQLite-first vs Postgres-first** for implementation order

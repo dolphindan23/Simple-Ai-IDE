@@ -19,6 +19,7 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { RunTimeline } from "@/components/RunTimeline";
+import { DatabasePanel } from "@/components/DatabasePanel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -855,13 +856,7 @@ export default function IDEPage() {
                 )}
                 
                 {activeTab === "database" && (
-                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
-                    <div className="text-center">
-                      <Database className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm font-medium">Database</p>
-                      <p className="text-xs opacity-60 mt-1">Database explorer coming soon</p>
-                    </div>
-                  </div>
+                  <DatabasePanel />
                 )}
                 
                 {activeTab === "secrets" && (

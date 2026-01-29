@@ -8,6 +8,7 @@ import * as path from "path";
 import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
 import { runsStorage } from "./runs";
 import { runAutoWorkflow, applyDiffWithBackup, revertDiff, isWorkflowRunning } from "./autoRunner";
+import * as db from "./database";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -1382,6 +1383,184 @@ export async function registerRoutes(
       } else {
         res.status(400).json({ success: false, error: result.error });
       }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== DATABASE ROUTES ====================
+
+  // List all databases
+  app.get("/api/db/list", (req: Request, res: Response) => {
+    try {
+      const databases = db.listDatabases();
+      res.json(databases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new SQLite database
+  app.post("/api/db/create", (req: Request, res: Response) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Database name is required" });
+      }
+      const database = db.createSqliteDatabase(name);
+      res.json(database);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get tables for a database
+  app.get("/api/db/:env/tables", (req: Request, res: Response) => {
+    try {
+      const dbPath = req.query.path as string;
+      if (!dbPath) {
+        return res.status(400).json({ error: "Database path is required" });
+      }
+      const tables = db.getTables(dbPath);
+      res.json(tables);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get table schema
+  app.get("/api/db/:env/schema/:table", (req: Request, res: Response) => {
+    try {
+      const dbPath = req.query.path as string;
+      const tableName = req.params.table;
+      if (!dbPath) {
+        return res.status(400).json({ error: "Database path is required" });
+      }
+      const schema = db.getTableSchema(dbPath, tableName);
+      res.json(schema);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get rows from a table
+  app.get("/api/db/:env/rows/:table", (req: Request, res: Response) => {
+    try {
+      const dbPath = req.query.path as string;
+      const tableName = req.params.table;
+      const limit = parseInt(req.query.limit as string) || 100;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const orderBy = req.query.orderBy as string | undefined;
+      const orderDir = (req.query.orderDir as "asc" | "desc") || "asc";
+      
+      if (!dbPath) {
+        return res.status(400).json({ error: "Database path is required" });
+      }
+      
+      const result = db.getRows(dbPath, tableName, { limit, offset, orderBy, orderDir });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Insert a row
+  app.post("/api/db/:env/rows/:table", (req: Request, res: Response) => {
+    try {
+      const env = req.params.env;
+      if (env === "prod") {
+        return res.status(403).json({ error: "Production database is read-only" });
+      }
+      
+      const dbPath = req.query.path as string;
+      const tableName = req.params.table;
+      const data = req.body;
+      
+      if (!dbPath) {
+        return res.status(400).json({ error: "Database path is required" });
+      }
+      
+      const result = db.insertRow(dbPath, tableName, data);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update a row
+  app.put("/api/db/:env/rows/:table/:pk", (req: Request, res: Response) => {
+    try {
+      const env = req.params.env;
+      if (env === "prod") {
+        return res.status(403).json({ error: "Production database is read-only" });
+      }
+      
+      const dbPath = req.query.path as string;
+      const tableName = req.params.table;
+      const pkValue = req.params.pk;
+      const pkColumn = req.query.pkColumn as string;
+      const data = req.body;
+      
+      if (!dbPath || !pkColumn) {
+        return res.status(400).json({ error: "Database path and pkColumn are required" });
+      }
+      
+      const result = db.updateRow(dbPath, tableName, pkColumn, pkValue, data);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete a row
+  app.delete("/api/db/:env/rows/:table/:pk", (req: Request, res: Response) => {
+    try {
+      const env = req.params.env;
+      if (env === "prod") {
+        return res.status(403).json({ error: "Production database is read-only" });
+      }
+      
+      const dbPath = req.query.path as string;
+      const tableName = req.params.table;
+      const pkValue = req.params.pk;
+      const pkColumn = req.query.pkColumn as string;
+      
+      if (!dbPath || !pkColumn) {
+        return res.status(400).json({ error: "Database path and pkColumn are required" });
+      }
+      
+      const result = db.deleteRow(dbPath, tableName, pkColumn, pkValue);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Execute raw SQL query
+  app.post("/api/db/:env/query", (req: Request, res: Response) => {
+    try {
+      const env = req.params.env;
+      const dbPath = req.query.path as string;
+      const { sql } = req.body;
+      
+      if (!dbPath) {
+        return res.status(400).json({ error: "Database path is required" });
+      }
+      
+      if (!sql) {
+        return res.status(400).json({ error: "SQL query is required" });
+      }
+      
+      // In production, only allow SELECT queries
+      if (env === "prod") {
+        const trimmedSql = sql.trim().toLowerCase();
+        if (!trimmedSql.startsWith("select") && !trimmedSql.startsWith("pragma") && !trimmedSql.startsWith("explain")) {
+          return res.status(403).json({ error: "Only SELECT queries allowed in production" });
+        }
+      }
+      
+      const result = db.executeQuery(dbPath, sql);
+      res.json(result);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
