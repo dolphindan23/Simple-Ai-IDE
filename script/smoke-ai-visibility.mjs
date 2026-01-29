@@ -32,17 +32,23 @@ const REPO_PATH = process.env.REPO_PATH ?? process.cwd();
 const MODE = process.env.MODE ?? "implement";
 const GOAL =
   process.env.GOAL ??
-  "SMOKE: Add a comment to README.md indicating smoke test timestamp.";
+  "SMOKE: Add a trivial comment to .simpleaide/smoke-test.txt and run verification.";
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS ?? 60000);
 
-const REQUIRED = new Set([
-  "READ_FILE",
-  "WRITE_FILE",
-  "TOOL_CALL",
-  "PROPOSE_CHANGESET",
-  "AGENT_STATUS_DONE",
-  "STEP_PROGRESS",
-]);
+// Required events depend on mode
+// - plan: only READ_FILE, STEP_PROGRESS, AGENT_STATUS_DONE
+// - implement/test/review: full event set
+const REQUIRED_BASE = ["AGENT_STATUS_DONE", "STEP_PROGRESS"];
+const REQUIRED_IMPLEMENT = ["READ_FILE", "WRITE_FILE", "TOOL_CALL", "PROPOSE_CHANGESET"];
+
+function getRequiredEvents(mode) {
+  if (mode === "plan") {
+    return new Set([...REQUIRED_BASE, "READ_FILE"]);
+  }
+  return new Set([...REQUIRED_BASE, ...REQUIRED_IMPLEMENT]);
+}
+
+const REQUIRED = getRequiredEvents(MODE);
 
 function log(...args) {
   console.log("[smoke]", new Date().toISOString(), ...args);
@@ -204,7 +210,8 @@ async function main() {
     }
   });
 
-  log("Triggering run:", MODE, "goal:", GOAL.slice(0, 50) + "...");
+  log("Mode:", MODE, "| Required events:", [...REQUIRED].join(", "));
+  log("Triggering run:", "goal:", GOAL.slice(0, 50) + "...");
   
   const startRes = await fetchJson(`${BASE_URL}/api/task/start`, {
     method: "POST",

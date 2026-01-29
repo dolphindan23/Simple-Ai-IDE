@@ -349,14 +349,21 @@ START_SERVER=1 node script/smoke-ai-visibility.mjs
 
 The smoke test:
 1. Connects to the SSE stream (`/api/ai/stream`)
-2. Triggers an implement task
-3. Validates required events arrive:
-   - `READ_FILE` (during snapshot capture)
-   - `WRITE_FILE` (when patch applied)
-   - `TOOL_CALL` (verification commands)
-   - `PROPOSE_CHANGESET` (when diff generated)
-   - `AGENT_STATUS` with `done` status
-   - `STEP` with progress fields (`step_index`, `step_total`, `phase`)
+2. Triggers a task (default: implement mode)
+3. Validates required events arrive (mode-aware):
+
+**Implement mode** (default - full pipeline test):
+- `READ_FILE` (during snapshot capture)
+- `WRITE_FILE` (when patch applied)
+- `TOOL_CALL` (verification commands)
+- `PROPOSE_CHANGESET` (when diff generated)
+- `AGENT_STATUS` with `done` status
+- `STEP` with progress fields
+
+**Plan mode** (lighter, non-mutating):
+- `READ_FILE` (during snapshot capture)
+- `AGENT_STATUS` with `done` status
+- `STEP` with progress fields
 
 Environment overrides:
 ```bash
