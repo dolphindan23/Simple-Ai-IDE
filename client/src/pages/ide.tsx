@@ -1,17 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { FileTree } from "@/components/FileTree";
 import { CodeEditor } from "@/components/CodeEditor";
-import { TerminalPanel } from "@/components/TerminalPanel";
+import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
+import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
 import { useTheme } from "@/components/ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings } from "lucide-react";
+import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,7 @@ import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/sch
 export default function IDEPage() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const terminalRef = useRef<HTMLDivElement>(null);
   
   // State
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -33,6 +35,19 @@ export default function IDEPage() {
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
   const [ollamaModel, setOllamaModel] = useState("codellama");
   
+  // Workspace header state
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("editor");
+  
+  // Terminal state with persistence
+  const [terminalState, setTerminalState] = useState<TerminalState>(() => {
+    const saved = localStorage.getItem("simpleide-terminal-state");
+    return (saved as TerminalState) || "expanded";
+  });
+  const [terminalHeight, setTerminalHeight] = useState<number>(() => {
+    const saved = localStorage.getItem("simpleide-terminal-height");
+    return saved ? parseInt(saved, 10) : 200;
+  });
+  
   // Dialog states
   const [showNewFileDialog, setShowNewFileDialog] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -40,6 +55,30 @@ export default function IDEPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [dialogInput, setDialogInput] = useState("");
+  
+  // Persist terminal state
+  useEffect(() => {
+    localStorage.setItem("simpleide-terminal-state", terminalState);
+  }, [terminalState]);
+  
+  useEffect(() => {
+    localStorage.setItem("simpleide-terminal-height", terminalHeight.toString());
+  }, [terminalHeight]);
+  
+  // Handle Console tab restoring terminal
+  const handleTabChange = useCallback((tab: WorkspaceTab) => {
+    if (tab === "console") {
+      if (terminalState === "hidden") {
+        setTerminalState("expanded");
+      }
+      setActiveTab("editor");
+      setTimeout(() => {
+        terminalRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    } else {
+      setActiveTab(tab);
+    }
+  }, [terminalState]);
 
   // Fetch file tree
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
@@ -191,17 +230,38 @@ export default function IDEPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+S - Save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (selectedFile && isDirty) {
           saveFileMutation.mutate();
         }
       }
+      // Ctrl/Cmd+J - Toggle terminal collapse/expand
+      if ((e.ctrlKey || e.metaKey) && e.key === "j") {
+        e.preventDefault();
+        setTerminalState(prev => {
+          if (prev === "hidden") return "expanded";
+          return prev === "collapsed" ? "expanded" : "collapsed";
+        });
+      }
+      // Ctrl/Cmd+` - Show/focus terminal
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        if (terminalState === "hidden") {
+          setTerminalState("expanded");
+        } else if (terminalState === "collapsed") {
+          setTerminalState("expanded");
+        }
+        setTimeout(() => {
+          terminalRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
     };
     
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedFile, isDirty, saveFileMutation]);
+  }, [selectedFile, isDirty, saveFileMutation, terminalState]);
 
   // Copy path to clipboard
   const handleCopyPath = useCallback(() => {
@@ -646,35 +706,111 @@ export default function IDEPage() {
 
           {/* Editor + Terminal Panel */}
           <ResizablePanel defaultSize={55}>
-            <ResizablePanelGroup direction="vertical">
-              {/* Editor */}
-              <ResizablePanel defaultSize={70}>
-                <div className="h-full">
-                  {selectedFile ? (
-                    <CodeEditor
-                      value={fileContent}
-                      onChange={handleContentChange}
-                      path={selectedFile}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-                      <FolderTree className="h-16 w-16 opacity-20 mb-4" />
-                      <p className="text-sm">Select a file to edit</p>
-                      <p className="text-xs opacity-60 mt-1">
-                        Or use the AI Team to generate code
-                      </p>
+            <div className="h-full flex flex-col">
+              {/* Workspace Header Tabs */}
+              <WorkspaceHeader
+                activeTab={activeTab}
+                onTabChange={handleTabChange}
+                fileName={selectedFile}
+              />
+              
+              {/* Main Workspace Content */}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {activeTab === "editor" && (
+                  <div className="flex-1 overflow-hidden">
+                    {selectedFile ? (
+                      <CodeEditor
+                        value={fileContent}
+                        onChange={handleContentChange}
+                        path={selectedFile}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+                        <FolderTree className="h-16 w-16 opacity-20 mb-4" />
+                        <p className="text-sm">Select a file to edit</p>
+                        <p className="text-xs opacity-60 mt-1">
+                          Or use the AI Team to generate code
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {activeTab === "preview" && (
+                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                    <div className="text-center">
+                      <Construction className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Preview</p>
+                      <p className="text-xs opacity-60 mt-1">Live preview coming soon</p>
                     </div>
-                  )}
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle />
-
-              {/* Terminal */}
-              <ResizablePanel defaultSize={30} minSize={15}>
-                <TerminalPanel logs={logs} onClear={handleClearLogs} />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+                  </div>
+                )}
+                
+                {activeTab === "database" && (
+                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                    <div className="text-center">
+                      <Database className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Database</p>
+                      <p className="text-xs opacity-60 mt-1">Database explorer coming soon</p>
+                    </div>
+                  </div>
+                )}
+                
+                {activeTab === "secrets" && (
+                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                    <div className="text-center">
+                      <KeyRound className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Secrets</p>
+                      <p className="text-xs opacity-60 mt-1">
+                        Manage secrets in Settings &gt; Security
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => setShowSettingsDialog(true)}
+                      >
+                        Open Settings
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
+                {activeTab === "shell" && (
+                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                    <div className="text-center">
+                      <Terminal className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Shell</p>
+                      <p className="text-xs opacity-60 mt-1">Interactive shell coming soon</p>
+                    </div>
+                  </div>
+                )}
+                
+                {activeTab === "developer" && (
+                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                    <div className="text-center">
+                      <Construction className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Developer Tools</p>
+                      <p className="text-xs opacity-60 mt-1">Dev tools coming soon</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Terminal - always visible when not hidden, on Editor tab */}
+                {activeTab === "editor" && (
+                  <div ref={terminalRef}>
+                    <TerminalPanel
+                      logs={logs}
+                      onClear={handleClearLogs}
+                      terminalState={terminalState}
+                      onTerminalStateChange={setTerminalState}
+                      terminalHeight={terminalHeight}
+                      onTerminalHeightChange={setTerminalHeight}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </ResizablePanel>
 
           <ResizableHandle />
