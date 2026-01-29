@@ -3,6 +3,23 @@
 ## Overview
 SimpleAide is an AI-powered coding workspace designed to streamline development with an AI-driven multi-agent workflow. It integrates a Monaco-based code editor, a file tree, a terminal, and an AI Team sidebar for generating plans, implementing code, running tests, and reviewing changes. The project aims to provide a minimal yet powerful IDE experience, leveraging AI to enhance developer productivity and accelerate software delivery.
 
+## Quick Start
+
+### Prerequisites
+- Node.js 20+ (required for native fetch)
+- Git (required for patch application)
+- Build tools for better-sqlite3: Python 3, make, g++ (macOS: `xcode-select --install`, Ubuntu: `apt install build-essential python3`)
+
+### Running Locally
+```bash
+npm install
+npm run dev
+```
+
+The app runs on **port 5000** (Replit) or **port 8521** (local, configurable via `PORT` env var).
+
+For detailed installation instructions, see [LOCAL_INSTALL.md](./LOCAL_INSTALL.md).
+
 ## User Preferences
 - Dark theme by default (IDE-focused design)
 - JetBrains Mono font for code
