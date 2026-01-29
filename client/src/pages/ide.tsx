@@ -11,7 +11,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit } from "lucide-react";
+import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings } from "lucide-react";
+import { SettingsModal } from "@/components/SettingsModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -37,6 +38,7 @@ export default function IDEPage() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [dialogInput, setDialogInput] = useState("");
 
   // Fetch file tree
@@ -468,6 +470,14 @@ export default function IDEPage() {
           <Button
             variant="ghost"
             size="icon"
+            onClick={() => setShowSettingsDialog(true)}
+            data-testid="button-settings"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={toggleTheme}
             data-testid="button-toggle-theme"
           >
@@ -479,6 +489,9 @@ export default function IDEPage() {
           </Button>
         </div>
       </header>
+
+      {/* Settings Modal */}
+      <SettingsModal open={showSettingsDialog} onOpenChange={setShowSettingsDialog} />
 
       {/* New File Dialog */}
       <Dialog open={showNewFileDialog} onOpenChange={setShowNewFileDialog}>

@@ -2,11 +2,13 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { runTask, applyTaskDiff } from "./taskRunner";
-import { createTaskSchema } from "@shared/schema";
+import { createTaskSchema, settingsSchema, defaultSettings, type Settings } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
+const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleide");
+const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 
 function isPathSafe(targetPath: string): boolean {
   const resolved = path.resolve(targetPath);
@@ -436,6 +438,76 @@ export async function registerRoutes(
       res.json({ success: true, sourcePath, newPath: finalRelPath });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // Settings API (Phase B)
+  // ============================================
+
+  // Helper to read settings
+  function readSettings(): Settings {
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+        const parsed = JSON.parse(data);
+        return settingsSchema.parse(parsed);
+      }
+    } catch (error) {
+      console.error("Error reading settings:", error);
+    }
+    return defaultSettings;
+  }
+
+  // Helper to write settings
+  function writeSettings(settings: Settings): void {
+    if (!fs.existsSync(SETTINGS_DIR)) {
+      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  }
+
+  // Get settings
+  app.get("/api/settings", (req: Request, res: Response) => {
+    try {
+      const settings = readSettings();
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update settings
+  app.put("/api/settings", (req: Request, res: Response) => {
+    try {
+      const newSettings = settingsSchema.parse(req.body);
+      writeSettings(newSettings);
+      res.json({ success: true, settings: newSettings });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Partial update settings (patch specific section)
+  app.patch("/api/settings/:section", (req: Request, res: Response) => {
+    try {
+      const section = req.params.section as string;
+      const currentSettings = readSettings();
+      
+      if (!(section in currentSettings)) {
+        return res.status(400).json({ error: `Invalid section: ${section}` });
+      }
+      
+      const updatedSettings = {
+        ...currentSettings,
+        [section]: { ...currentSettings[section as keyof Settings], ...req.body },
+      };
+      
+      const validated = settingsSchema.parse(updatedSettings);
+      writeSettings(validated);
+      res.json({ success: true, settings: validated });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
     }
   });
 

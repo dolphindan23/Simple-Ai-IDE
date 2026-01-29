@@ -1,0 +1,32 @@
+{
+  "general": {
+    "theme": "dark",
+    "autoSaveDelay": 1000,
+    "showHiddenFiles": false
+  },
+  "editor": {
+    "fontSize": 14,
+    "tabSize": 2,
+    "wordWrap": "on",
+    "minimap": true,
+    "lineNumbers": "on",
+    "fontFamily": "JetBrains Mono, monospace"
+  },
+  "ai": {
+    "ollamaUrl": "http://localhost:11434",
+    "ollamaModel": "codellama",
+    "autoSave": true
+  },
+  "integrations": {
+    "kaggle": {
+      "username": "test-user-RR-8hB",
+      "enabled": true
+    },
+    "huggingface": {
+      "enabled": false
+    },
+    "ngc": {
+      "enabled": false
+    }
+  }
+}

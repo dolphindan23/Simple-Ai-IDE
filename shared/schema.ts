@@ -67,3 +67,54 @@ export const defaultOllamaConfig: OllamaConfig = {
   baseUrl: "http://localhost:11434",
   model: "codellama",
 };
+
+// Settings types
+export const editorSettingsSchema = z.object({
+  fontSize: z.number().min(8).max(32).default(14),
+  tabSize: z.number().min(1).max(8).default(2),
+  wordWrap: z.enum(["on", "off", "wordWrapColumn", "bounded"]).default("on"),
+  minimap: z.boolean().default(true),
+  lineNumbers: z.enum(["on", "off", "relative"]).default("on"),
+  fontFamily: z.string().default("JetBrains Mono, monospace"),
+});
+
+export const aiSettingsSchema = z.object({
+  ollamaUrl: z.string().url().default("http://localhost:11434"),
+  ollamaModel: z.string().default("codellama"),
+  autoSave: z.boolean().default(true),
+});
+
+export const generalSettingsSchema = z.object({
+  theme: z.enum(["light", "dark", "system"]).default("dark"),
+  autoSaveDelay: z.number().min(500).max(10000).default(1000),
+  showHiddenFiles: z.boolean().default(false),
+});
+
+export const integrationSettingsSchema = z.object({
+  kaggle: z.object({
+    username: z.string().optional(),
+    enabled: z.boolean().default(false),
+  }).default({}),
+  huggingface: z.object({
+    enabled: z.boolean().default(false),
+  }).default({}),
+  ngc: z.object({
+    org: z.string().optional(),
+    enabled: z.boolean().default(false),
+  }).default({}),
+});
+
+export const settingsSchema = z.object({
+  general: generalSettingsSchema.default({}),
+  editor: editorSettingsSchema.default({}),
+  ai: aiSettingsSchema.default({}),
+  integrations: integrationSettingsSchema.default({}),
+});
+
+export type EditorSettings = z.infer<typeof editorSettingsSchema>;
+export type AISettings = z.infer<typeof aiSettingsSchema>;
+export type GeneralSettings = z.infer<typeof generalSettingsSchema>;
+export type IntegrationSettings = z.infer<typeof integrationSettingsSchema>;
+export type Settings = z.infer<typeof settingsSchema>;
+
+export const defaultSettings: Settings = settingsSchema.parse({});
