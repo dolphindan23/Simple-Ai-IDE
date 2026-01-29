@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
+import { SecretsPanel } from "@/components/SecretsPanel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -740,23 +741,7 @@ export default function IDEPage() {
                 )}
                 
                 {activeTab === "secrets" && (
-                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
-                    <div className="text-center">
-                      <KeyRound className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm font-medium">Secrets</p>
-                      <p className="text-xs opacity-60 mt-1">
-                        Manage secrets in Settings &gt; Security
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => setShowSettingsDialog(true)}
-                      >
-                        Open Settings
-                      </Button>
-                    </div>
-                  </div>
+                  <SecretsPanel />
                 )}
                 
                 {activeTab === "shell" && (
