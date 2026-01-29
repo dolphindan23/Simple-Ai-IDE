@@ -4,7 +4,7 @@
 SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-agent workflow. It features a Monaco-based code editor, file tree explorer, terminal output panel, and an AI Team sidebar that can generate plans, implement code, run tests, and review changes.
 
 ## Key Features
-- **Workspace Header**: Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer tabs
+- **Workspace Header**: Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer, AI Agents tabs
 - **File Tree**: Browse project files with collapsible folders
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
@@ -12,6 +12,7 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 - **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection
 - **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
+- **AI Agents Panel**: Configure multiple LLM backends and assign roles (Planner, Coder, Reviewer, TestFixer, Doc) with per-role model settings
 - **Terminal Panel**: Collapsible/resizable output panel with 3 states (expanded/collapsed/hidden)
 - **Diff-First Approach**: AI generates diffs that users can review and apply
 - **Ollama Integration**: Uses local Ollama for AI capabilities (with graceful fallback to stubs)
@@ -24,6 +25,7 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 ```
 client/src/
 ├── components/
+│   ├── AIAgentsPanel.tsx    # AI backends and roles configuration
 │   ├── AITeamPanel.tsx      # AI workflow sidebar
 │   ├── CodeEditor.tsx       # Monaco editor wrapper
 │   ├── DiffViewer.tsx       # Unified diff display
@@ -31,7 +33,7 @@ client/src/
 │   ├── SettingsModal.tsx    # Settings dialog with 5 tabs
 │   ├── TerminalPanel.tsx    # Log output with 3 states
 │   ├── ThemeProvider.tsx    # Dark/light theme context
-│   └── WorkspaceHeader.tsx  # Tab bar (Editor/Preview/etc.)
+│   └── WorkspaceHeader.tsx  # Tab bar (Editor/Preview/AI Agents/etc.)
 ├── pages/
 │   └── ide.tsx              # Main IDE layout
 └── App.tsx                  # App entry with routing
@@ -82,6 +84,39 @@ shared/
 | PUT | /api/secrets/:key | Add or update a secret |
 | DELETE | /api/secrets/:key | Delete a secret |
 | POST | /api/integrations/test/:provider | Test integration connection (kaggle/huggingface/ngc) |
+| POST | /api/ai-agents/test-backend | Test AI backend connection and fetch available models |
+| POST | /api/ai-agents/chat | Orchestrator endpoint for role-based AI chat with fallback |
+
+## AI Agents System
+
+The AI Agents system allows configuring multiple LLM backends and assigning them to specific agent roles:
+
+### Backends
+- **Name**: Display name for the backend
+- **Base URL**: Ollama-compatible API endpoint (e.g., http://localhost:11434)
+- **Auth Type**: none, basic (username/password), or bearer (token)
+- **Credentials**: Stored in encrypted vault as BACKEND_{id}_TOKEN/USERNAME/PASSWORD
+
+### Agent Roles
+5 specialized roles with individual configurations:
+- **Planner**: Generates implementation plans
+- **Coder**: Writes code implementations
+- **Reviewer**: Reviews code for quality
+- **TestFixer**: Fixes failing tests
+- **Doc**: Generates documentation
+
+Each role can specify:
+- Backend to use (or default)
+- Model name
+- Temperature (0-2)
+- Context length (num_ctx)
+
+### Orchestrator
+The `/api/ai-agents/chat` endpoint routes requests based on role:
+1. Uses the role's configured backend if available
+2. Falls back to default backend
+3. Falls back to first available backend
+4. Returns error if no backend available
 
 ## Secrets Vault
 
@@ -150,3 +185,4 @@ The app serves on port 5000 with both frontend and backend.
 - 2026-01-29: Security hardening - File permissions (0600), redactSecrets() log scrubber, vault auto-lock (15 min default), LOCAL_INSTALL.md
 - 2026-01-29: Workspace Header - Added Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer tabs
 - 2026-01-29: Terminal improvements - 3 states (expanded/collapsed/hidden), draggable resize, Ctrl+J and Ctrl+` shortcuts, localStorage persistence
+- 2026-01-29: AI Agents - Added AI Agents tab with multi-backend management, role configuration (Planner/Coder/Reviewer/TestFixer/Doc), orchestrator with fallback routing, vault-stored credentials
