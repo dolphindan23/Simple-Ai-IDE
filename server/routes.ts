@@ -657,5 +657,107 @@ export async function registerRoutes(
     }
   });
 
+  // Test integration connection
+  app.post("/api/integrations/test/:provider", async (req: Request, res: Response) => {
+    const provider = req.params.provider as string;
+    
+    if (!currentVault) {
+      return res.status(401).json({ error: "Vault is locked. Unlock the vault first to test connections." });
+    }
+    
+    try {
+      let secretKey: string;
+      let testUrl: string;
+      let headers: Record<string, string> = {};
+      
+      switch (provider) {
+        case "kaggle":
+          secretKey = "KAGGLE_API_KEY";
+          // Kaggle uses username:key format
+          const kaggleKey = currentVault.secrets[secretKey];
+          if (!kaggleKey) {
+            return res.status(400).json({ error: "KAGGLE_API_KEY not found in vault. Add it in the Security tab." });
+          }
+          // Kaggle API expects base64 encoded username:key
+          const { username } = req.body;
+          if (!username) {
+            return res.status(400).json({ error: "Kaggle username is required" });
+          }
+          const kaggleAuth = Buffer.from(`${username}:${kaggleKey}`).toString("base64");
+          testUrl = "https://www.kaggle.com/api/v1/competitions/list";
+          headers = { Authorization: `Basic ${kaggleAuth}` };
+          break;
+          
+        case "huggingface":
+          secretKey = "HUGGINGFACE_TOKEN";
+          const hfToken = currentVault.secrets[secretKey];
+          if (!hfToken) {
+            return res.status(400).json({ error: "HUGGINGFACE_TOKEN not found in vault. Add it in the Security tab." });
+          }
+          testUrl = "https://huggingface.co/api/whoami-v2";
+          headers = { Authorization: `Bearer ${hfToken}` };
+          break;
+          
+        case "ngc":
+          secretKey = "NGC_API_KEY";
+          const ngcKey = currentVault.secrets[secretKey];
+          if (!ngcKey) {
+            return res.status(400).json({ error: "NGC_API_KEY not found in vault. Add it in the Security tab." });
+          }
+          testUrl = "https://api.ngc.nvidia.com/v2/orgs";
+          headers = { Authorization: `Bearer ${ngcKey}` };
+          break;
+          
+        default:
+          return res.status(400).json({ error: `Unknown provider: ${provider}` });
+      }
+      
+      // Make test request with manual timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      let response: globalThis.Response;
+      try {
+        response = await fetch(testUrl, { 
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        let details = "";
+        
+        if (provider === "huggingface" && data.name) {
+          details = `Logged in as: ${data.name}`;
+        } else if (provider === "kaggle") {
+          details = "Kaggle API connection successful";
+        } else if (provider === "ngc") {
+          details = "NGC API connection successful";
+        }
+        
+        res.json({ success: true, message: `${provider} connection successful`, details });
+      } else {
+        const errorText = await response.text();
+        res.status(response.status).json({ 
+          error: `${provider} API returned ${response.status}`, 
+          details: errorText.substring(0, 200) 
+        });
+      }
+    } catch (error: any) {
+      // Handle both AbortError (from AbortController) and TimeoutError
+      if (error.name === "AbortError" || error.name === "TimeoutError") {
+        res.status(504).json({ error: "Connection timed out" });
+      } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+        res.status(503).json({ error: "Service unavailable: " + error.message });
+      } else {
+        res.status(500).json({ error: error.message || "Unknown error" });
+      }
+    }
+  });
+
   return httpServer;
 }

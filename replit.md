@@ -7,7 +7,9 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 - **File Tree**: Browse project files with collapsible folders
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
-- **Settings System**: Persistent settings in .simpleide/settings.json with tabs for General, Editor, AI, and Integrations
+- **Settings System**: Persistent settings in .simpleide/settings.json with 5 tabs (General, Editor, AI, Integrations, Security)
+- **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection
+- **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
 - **Terminal Panel**: View real-time task logs via SSE streaming
 - **Diff-First Approach**: AI generates diffs that users can review and apply
@@ -24,6 +26,7 @@ client/src/
 │   ├── CodeEditor.tsx     # Monaco editor wrapper
 │   ├── DiffViewer.tsx     # Unified diff display
 │   ├── FileTree.tsx       # Project file browser
+│   ├── SettingsModal.tsx  # Settings dialog with 5 tabs
 │   ├── TerminalPanel.tsx  # Log output display
 │   └── ThemeProvider.tsx  # Dark/light theme context
 ├── pages/
@@ -37,6 +40,7 @@ server/
 ├── routes.ts      # API endpoints
 ├── storage.ts     # In-memory task/artifact storage
 ├── taskRunner.ts  # Task execution and AI orchestration
+├── secrets.ts     # Encrypted secrets vault management
 └── ollama.ts      # Ollama API adapter
 ```
 
@@ -67,6 +71,27 @@ shared/
 | GET | /api/settings | Get settings from .simpleide/settings.json |
 | PUT | /api/settings | Save all settings |
 | PATCH | /api/settings/:section | Update specific settings section |
+| GET | /api/secrets/status | Check vault exists/unlocked status |
+| POST | /api/secrets/create | Create new vault with master password |
+| POST | /api/secrets/unlock | Unlock vault with master password |
+| POST | /api/secrets/lock | Lock vault (clear session) |
+| GET | /api/secrets | List secrets with masked values |
+| PUT | /api/secrets/:key | Add or update a secret |
+| DELETE | /api/secrets/:key | Delete a secret |
+| POST | /api/integrations/test/:provider | Test integration connection (kaggle/huggingface/ngc) |
+
+## Secrets Vault
+
+The secrets vault provides secure storage for API keys and tokens:
+- **Encryption**: AES-256-GCM with random IV
+- **Key Derivation**: PBKDF2 with 100,000 iterations and random salt
+- **Storage**: .simpleide/secrets.enc (encrypted blob)
+- **Session**: In-memory unlock state (cleared on server restart)
+
+Expected secret keys for integrations:
+- `KAGGLE_API_KEY` - Kaggle API key
+- `HUGGINGFACE_TOKEN` - HuggingFace access token
+- `NGC_API_KEY` - NVIDIA NGC API key
 
 ## Task Modes
 
@@ -91,6 +116,9 @@ To use with Ollama:
 
 ## Development
 
+### Requirements
+- Node.js 18+ (required for native fetch support)
+
 ### Running the Application
 ```bash
 npm run dev
@@ -100,8 +128,9 @@ The app serves on port 5000 with both frontend and backend.
 
 ### Technology Stack
 - **Frontend**: React 18, TanStack Query, Monaco Editor, Tailwind CSS, shadcn/ui
-- **Backend**: Express.js, TypeScript
+- **Backend**: Express.js, TypeScript, Node.js 20 (native fetch)
 - **AI**: Ollama (local LLM)
+- **Security**: AES-256-GCM encryption, PBKDF2 key derivation
 - **Styling**: Dark/light theme support with CSS variables
 
 ## User Preferences
@@ -112,4 +141,6 @@ The app serves on port 5000 with both frontend and backend.
 ## Recent Changes
 - 2026-01-29: Initial MVP with file tree, Monaco editor, AI Team panel, and Ollama integration
 - 2026-01-29: Phase A - Added full file editing capabilities with dirty state tracking, Ctrl+S save, and File menu (New File, New Folder, Rename, Delete, Duplicate, Copy Path)
-- 2026-01-29: Phase B - Added Settings modal with 4 tabs (General, Editor, AI, Integrations), persisted to .simpleide/settings.json
+- 2026-01-29: Phase B - Added Settings modal with 5 tabs (General, Editor, AI, Integrations, Security), persisted to .simpleide/settings.json
+- 2026-01-29: Phase C1 - Added encrypted secrets vault with AES-256-GCM encryption, master password unlock, and CRUD operations
+- 2026-01-29: Phase C2 - Added Test Connection buttons for Kaggle, HuggingFace, and NGC integrations

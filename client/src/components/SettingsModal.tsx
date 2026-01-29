@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Code2, Bot, Puzzle, Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Code2, Bot, Puzzle, Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key, Loader2, CheckCircle, XCircle, Zap } from "lucide-react";
 import type { Settings as SettingsType } from "@shared/schema";
 
 interface VaultStatus {
@@ -39,6 +39,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [newSecretKey, setNewSecretKey] = useState("");
   const [newSecretValue, setNewSecretValue] = useState("");
   const [showNewSecretValue, setShowNewSecretValue] = useState(false);
+  
+  // Integration test state
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
   const { data: savedSettings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
@@ -171,6 +175,45 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       }
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleTestConnection = async (provider: string) => {
+    // Client-side validation
+    if (provider === "kaggle" && !settings?.integrations.kaggle.username?.trim()) {
+      toast({ title: "Missing username", description: "Enter your Kaggle username before testing", variant: "destructive" });
+      return;
+    }
+    
+    setTestingProvider(provider);
+    // Clear previous result by removing the key from results
+    setTestResults((prev) => {
+      const updated = { ...prev };
+      delete updated[provider];
+      return updated;
+    });
+    
+    try {
+      const body: Record<string, string> = {};
+      if (provider === "kaggle" && settings?.integrations.kaggle.username) {
+        body.username = settings.integrations.kaggle.username;
+      }
+      
+      const res = await apiRequest("POST", `/api/integrations/test/${provider}`, body);
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTestResults((prev) => ({ ...prev, [provider]: { success: true, message: data.details || "Connected" } }));
+        toast({ title: "Connection successful", description: data.message });
+      } else {
+        setTestResults((prev) => ({ ...prev, [provider]: { success: false, message: data.error } }));
+        toast({ title: "Connection failed", description: data.error, variant: "destructive" });
+      }
+    } catch (error: any) {
+      setTestResults((prev) => ({ ...prev, [provider]: { success: false, message: error.message } }));
+      toast({ title: "Connection failed", description: error.message, variant: "destructive" });
+    } finally {
+      setTestingProvider(null);
     }
   };
 
@@ -463,21 +506,48 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   />
                 </div>
                 {settings.integrations.kaggle.enabled && (
-                  <div className="space-y-2 pt-2">
-                    <Label>Kaggle Username</Label>
-                    <Input
-                      value={settings.integrations.kaggle.username || ""}
-                      onChange={(e) => setSettings({
-                        ...settings,
-                        integrations: {
-                          ...settings.integrations,
-                          kaggle: { ...settings.integrations.kaggle, username: e.target.value }
-                        }
-                      })}
-                      placeholder="your-kaggle-username"
-                      data-testid="input-kaggle-username"
-                    />
-                    <p className="text-xs text-muted-foreground">API key is stored in the encrypted secrets vault</p>
+                  <div className="space-y-3 pt-2">
+                    <div className="space-y-2">
+                      <Label>Kaggle Username</Label>
+                      <Input
+                        value={settings.integrations.kaggle.username || ""}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          integrations: {
+                            ...settings.integrations,
+                            kaggle: { ...settings.integrations.kaggle, username: e.target.value }
+                          }
+                        })}
+                        placeholder="your-kaggle-username"
+                        data-testid="input-kaggle-username"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">API key is stored in the encrypted secrets vault (KAGGLE_API_KEY)</p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestConnection("kaggle")}
+                        disabled={testingProvider === "kaggle" || !vaultStatus.unlocked}
+                        data-testid="button-test-kaggle"
+                      >
+                        {testingProvider === "kaggle" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4 mr-2" />
+                        )}
+                        Test Connection
+                      </Button>
+                      {testResults.kaggle && (
+                        <span className={`flex items-center gap-1 text-sm ${testResults.kaggle.success ? "text-green-500" : "text-red-500"}`}>
+                          {testResults.kaggle.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                          {testResults.kaggle.message}
+                        </span>
+                      )}
+                    </div>
+                    {!vaultStatus.unlocked && (
+                      <p className="text-xs text-yellow-600">Unlock the vault in Security tab to test connection</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -501,7 +571,34 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   />
                 </div>
                 {settings.integrations.huggingface.enabled && (
-                  <p className="text-xs text-muted-foreground pt-2">API token is stored in the encrypted secrets vault</p>
+                  <div className="space-y-3 pt-2">
+                    <p className="text-xs text-muted-foreground">API token is stored in the encrypted secrets vault (HUGGINGFACE_TOKEN)</p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestConnection("huggingface")}
+                        disabled={testingProvider === "huggingface" || !vaultStatus.unlocked}
+                        data-testid="button-test-huggingface"
+                      >
+                        {testingProvider === "huggingface" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4 mr-2" />
+                        )}
+                        Test Connection
+                      </Button>
+                      {testResults.huggingface && (
+                        <span className={`flex items-center gap-1 text-sm ${testResults.huggingface.success ? "text-green-500" : "text-red-500"}`}>
+                          {testResults.huggingface.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                          {testResults.huggingface.message}
+                        </span>
+                      )}
+                    </div>
+                    {!vaultStatus.unlocked && (
+                      <p className="text-xs text-yellow-600">Unlock the vault in Security tab to test connection</p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -524,21 +621,48 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   />
                 </div>
                 {settings.integrations.ngc.enabled && (
-                  <div className="space-y-2 pt-2">
-                    <Label>NGC Organization</Label>
-                    <Input
-                      value={settings.integrations.ngc.org || ""}
-                      onChange={(e) => setSettings({
-                        ...settings,
-                        integrations: {
-                          ...settings.integrations,
-                          ngc: { ...settings.integrations.ngc, org: e.target.value }
-                        }
-                      })}
-                      placeholder="your-ngc-org"
-                      data-testid="input-ngc-org"
-                    />
-                    <p className="text-xs text-muted-foreground">API key is stored in the encrypted secrets vault</p>
+                  <div className="space-y-3 pt-2">
+                    <div className="space-y-2">
+                      <Label>NGC Organization</Label>
+                      <Input
+                        value={settings.integrations.ngc.org || ""}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          integrations: {
+                            ...settings.integrations,
+                            ngc: { ...settings.integrations.ngc, org: e.target.value }
+                          }
+                        })}
+                        placeholder="your-ngc-org"
+                        data-testid="input-ngc-org"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">API key is stored in the encrypted secrets vault (NGC_API_KEY)</p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestConnection("ngc")}
+                        disabled={testingProvider === "ngc" || !vaultStatus.unlocked}
+                        data-testid="button-test-ngc"
+                      >
+                        {testingProvider === "ngc" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4 mr-2" />
+                        )}
+                        Test Connection
+                      </Button>
+                      {testResults.ngc && (
+                        <span className={`flex items-center gap-1 text-sm ${testResults.ngc.success ? "text-green-500" : "text-red-500"}`}>
+                          {testResults.ngc.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                          {testResults.ngc.message}
+                        </span>
+                      )}
+                    </div>
+                    {!vaultStatus.unlocked && (
+                      <p className="text-xs text-yellow-600">Unlock the vault in Security tab to test connection</p>
+                    )}
                   </div>
                 )}
               </div>
