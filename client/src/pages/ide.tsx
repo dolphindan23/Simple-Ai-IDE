@@ -438,7 +438,7 @@ export default function IDEPage() {
     },
   });
 
-  const handleRunTask = (mode: TaskMode) => {
+  const handleRunTask = (mode: TaskMode, accurateMode?: boolean) => {
     createTaskMutation.mutate({
       repoPath: ".",
       goal,

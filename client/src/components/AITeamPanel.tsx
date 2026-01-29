@@ -1,26 +1,58 @@
 import { useState } from "react";
-import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, Zap, Target, Clock, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { Task, TaskMode, Artifact } from "@shared/schema";
 
 interface AITeamPanelProps {
   goal: string;
   onGoalChange: (goal: string) => void;
-  onRunTask: (mode: TaskMode) => void;
+  onRunTask: (mode: TaskMode, accurateMode?: boolean) => void;
   currentTask: Task | null;
   artifacts: Artifact[];
   onApplyDiff: (diffName: string) => void;
   isLoading: boolean;
 }
 
+function formatLatency(ms?: number): string {
+  if (!ms) return "";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function getMiniDiffPreview(content: string): { additions: number; deletions: number; files: string[] } {
+  const lines = content.split("\n");
+  let additions = 0;
+  let deletions = 0;
+  const files: string[] = [];
+  
+  for (const line of lines) {
+    if (line.startsWith("+++ b/") || line.startsWith("+++ ")) {
+      const file = line.replace(/^\+\+\+ b?\//, "").replace(/^\+\+\+ /, "");
+      if (file && !files.includes(file)) {
+        files.push(file);
+      }
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      additions++;
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      deletions++;
+    }
+  }
+  
+  return { additions, deletions, files };
+}
+
 function ArtifactCard({ artifact, onApply }: { artifact: Artifact; onApply?: () => void }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
+  const [showFullDiff, setShowFullDiff] = useState(false);
   
   const getIcon = () => {
     switch (artifact.type) {
@@ -52,49 +84,120 @@ function ArtifactCard({ artifact, onApply }: { artifact: Artifact; onApply?: () 
     }
   };
 
+  const diffStats = artifact.type === "diff" ? getMiniDiffPreview(artifact.content) : null;
+
   return (
-    <Card className="overflow-hidden">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger asChild>
-          <CardHeader className="p-3 cursor-pointer hover-elevate">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {isOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                )}
-                {getIcon()}
-                <CardTitle className="text-sm font-medium">{artifact.name}</CardTitle>
+    <>
+      <Card className="overflow-hidden">
+        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="p-3 cursor-pointer hover-elevate">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {isOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  )}
+                  {getIcon()}
+                  <CardTitle className="text-sm font-medium truncate">{artifact.name}</CardTitle>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {artifact.metadata?.latencyMs && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                      <Clock className="h-3 w-3" />
+                      {formatLatency(artifact.metadata.latencyMs)}
+                    </span>
+                  )}
+                  <Badge variant={getBadgeVariant()} className="text-xs">
+                    {artifact.type}
+                  </Badge>
+                </div>
               </div>
-              <Badge variant={getBadgeVariant()} className="text-xs">
-                {artifact.type}
-              </Badge>
-            </div>
-          </CardHeader>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="p-3 pt-0">
-            <ScrollArea className="h-40">
-              <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground bg-muted/50 p-2 rounded-md">
-                {artifact.content}
-              </pre>
-            </ScrollArea>
-            {artifact.type === "diff" && onApply && (
-              <Button
-                size="sm"
-                className="mt-2 w-full"
-                onClick={onApply}
-                data-testid={`button-apply-${artifact.name}`}
-              >
-                <Check className="h-3.5 w-3.5 mr-1.5" />
+              {artifact.metadata?.model && (
+                <div className="flex items-center gap-2 mt-1 ml-7">
+                  <span className="text-[10px] text-muted-foreground">
+                    {artifact.metadata.backend && `${artifact.metadata.backend} / `}{artifact.metadata.model}
+                  </span>
+                </div>
+              )}
+              {diffStats && !isOpen && (
+                <div className="flex items-center gap-3 mt-1.5 ml-7">
+                  <span className="text-[10px] text-green-500 font-mono">+{diffStats.additions}</span>
+                  <span className="text-[10px] text-red-500 font-mono">-{diffStats.deletions}</span>
+                  <span className="text-[10px] text-muted-foreground">{diffStats.files.length} file{diffStats.files.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="p-3 pt-0">
+              {diffStats && (
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-green-500 font-mono">+{diffStats.additions}</span>
+                    <span className="text-xs text-red-500 font-mono">-{diffStats.deletions}</span>
+                    <span className="text-xs text-muted-foreground">{diffStats.files.length} file{diffStats.files.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={(e) => { e.stopPropagation(); setShowFullDiff(true); }}
+                    data-testid={`button-view-full-${artifact.name}`}
+                  >
+                    <Eye className="h-3 w-3 mr-1" />
+                    View Full Diff
+                  </Button>
+                </div>
+              )}
+              <ScrollArea className="h-40">
+                <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground bg-muted/50 p-2 rounded-md">
+                  {artifact.content}
+                </pre>
+              </ScrollArea>
+              {artifact.type === "diff" && onApply && (
+                <Button
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={onApply}
+                  data-testid={`button-apply-${artifact.name}`}
+                >
+                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  Apply Diff
+                </Button>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      {/* Full Diff Dialog */}
+      <Dialog open={showFullDiff} onOpenChange={setShowFullDiff}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCode className="h-5 w-5 text-green-400" />
+              {artifact.name}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh]">
+            <pre className="text-sm font-mono whitespace-pre-wrap p-4 bg-muted/50 rounded-md">
+              {artifact.content}
+            </pre>
+          </ScrollArea>
+          {artifact.type === "diff" && onApply && (
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowFullDiff(false)}>Close</Button>
+              <Button onClick={() => { onApply(); setShowFullDiff(false); }}>
+                <Check className="h-4 w-4 mr-1.5" />
                 Apply Diff
               </Button>
-            )}
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -107,6 +210,8 @@ export function AITeamPanel({
   onApplyDiff,
   isLoading,
 }: AITeamPanelProps) {
+  const [accurateMode, setAccurateMode] = useState(false);
+  
   const getStatusBadge = () => {
     if (!currentTask) return null;
     
@@ -166,12 +271,33 @@ export function AITeamPanel({
             />
           </div>
 
+          {/* Mode Toggle */}
+          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
+            <div className="flex items-center gap-2">
+              <Zap className={cn("h-4 w-4", !accurateMode ? "text-yellow-500" : "text-muted-foreground")} />
+              <span className={cn("text-xs font-medium", !accurateMode ? "text-foreground" : "text-muted-foreground")}>
+                Fast
+              </span>
+            </div>
+            <Switch
+              checked={accurateMode}
+              onCheckedChange={setAccurateMode}
+              data-testid="switch-mode"
+            />
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xs font-medium", accurateMode ? "text-foreground" : "text-muted-foreground")}>
+                Accurate
+              </span>
+              <Target className={cn("h-4 w-4", accurateMode ? "text-primary" : "text-muted-foreground")} />
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => onRunTask("plan")}
+              onClick={() => onRunTask("plan", accurateMode)}
               disabled={isLoading || !goal.trim()}
               className="gap-1.5"
               data-testid="button-plan"
@@ -182,7 +308,7 @@ export function AITeamPanel({
             <Button
               variant="default"
               size="sm"
-              onClick={() => onRunTask("implement")}
+              onClick={() => onRunTask("implement", accurateMode)}
               disabled={isLoading || !goal.trim()}
               className="gap-1.5"
               data-testid="button-implement"
@@ -193,7 +319,7 @@ export function AITeamPanel({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => onRunTask("test")}
+              onClick={() => onRunTask("test", accurateMode)}
               disabled={isLoading || !goal.trim()}
               className="gap-1.5"
               data-testid="button-test"
@@ -204,7 +330,7 @@ export function AITeamPanel({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => onRunTask("review")}
+              onClick={() => onRunTask("review", accurateMode)}
               disabled={isLoading || !goal.trim()}
               className="gap-1.5"
               data-testid="button-review"

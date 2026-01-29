@@ -43,9 +43,10 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
     editor.updateOptions({
       minimap: { enabled: true, scale: 0.8 },
       scrollBeyondLastLine: false,
-      fontSize: 13,
+      fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       fontLigatures: true,
+      lineHeight: 1.55,
       lineNumbers: "on",
       renderLineHighlight: "all",
       cursorBlinking: "smooth",

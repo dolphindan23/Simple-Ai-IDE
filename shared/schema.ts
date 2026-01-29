@@ -43,10 +43,18 @@ export const createTaskSchema = z.object({
 export type CreateTask = z.infer<typeof createTaskSchema>;
 
 // Artifact types
+export interface ArtifactMetadata {
+  model?: string;
+  backend?: string;
+  latencyMs?: number;
+  timestamp?: string;
+}
+
 export interface Artifact {
   name: string;
   content: string;
   type: "plan" | "diff" | "review" | "test" | "log";
+  metadata?: ArtifactMetadata;
 }
 
 // File tree types
