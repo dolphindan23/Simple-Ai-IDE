@@ -14,7 +14,7 @@ import {
   TrustLimits 
 } from "./patchValidator";
 import { createRun, getRun, getRunByKey } from "./aiDb";
-import { emitRunStatus, emitAgentStatus, emitStep, emitReadFile, emitWriteFile, emitError, emitProposeChangeset, emitNeedsApproval } from "./aiEvents";
+import { emitRunStatus, emitAgentStatus, emitStep, emitReadFile, emitWriteFile, emitToolCall, emitError, emitProposeChangeset, emitNeedsApproval } from "./aiEvents";
 
 const ALLOWED_COMMANDS = new Set(["git", "pytest", "ruff", "mypy", "npm", "node", "python", "python3"]);
 
@@ -223,6 +223,7 @@ async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
   
   emitRunStatus(runId, "running", `Starting plan generation (${modeLabel} mode)`);
   emitAgentStatus(runId, "planner", "working", "Analyzing goal and creating plan");
+  emitStep(runId, "planner", "Analyzing goal", undefined, { step_index: 1, step_total: 2, phase: "plan" });
   
   log(task.id, `[INFO] Starting plan generation... (${modeLabel} mode)\n`);
   
@@ -264,6 +265,8 @@ Format as JSON with structure:
       };
       storage.setArtifact(task.id, "plan.json", JSON.stringify(stubPlan, null, 2));
       log(task.id, "[SUCCESS] Plan generated (stub mode)\n");
+      emitAgentStatus(runId, "planner", "done", "Plan generated (stub mode)");
+      emitRunStatus(runId, "completed", "Plan generated in stub mode");
       return;
     }
 
@@ -285,9 +288,13 @@ Format as JSON with structure:
       }, null, 2));
     }
     
+    emitStep(runId, "planner", "Plan complete", undefined, { step_index: 2, step_total: 2, phase: "plan" });
     log(task.id, "[SUCCESS] Plan generated\n");
+    emitAgentStatus(runId, "planner", "done", "Plan generation completed");
+    emitRunStatus(runId, "completed", "Plan generated successfully");
   } catch (error: any) {
     log(task.id, `[ERROR] Plan generation failed: ${error.message}\n`);
+    emitAgentStatus(runId, "planner", "error", error.message);
     throw error;
   }
 }
@@ -303,14 +310,20 @@ async function runImplementMode(task: Task, ollama: OllamaAdapter): Promise<void
   
   const cwd = path.resolve(task.repoPath);
   
-  emitStep(runId, "coder", "Capturing repository snapshot");
+  emitStep(runId, "coder", "Capturing repository snapshot", undefined, { step_index: 1, step_total: 4, phase: "implement" });
   log(task.id, "[INFO] Capturing repository snapshot...\n");
   const targetFiles = extractTargetFilesFromGoal(task.goal, cwd);
   const snapshot = captureRepoSnapshot(cwd, targetFiles);
   const snapshotContext = formatSnapshotForPrompt(snapshot);
   
+  for (const file of snapshot.files) {
+    emitReadFile(runId, "coder", file.path);
+  }
+  
   storage.setArtifact(task.id, "snapshot.txt", snapshotContext);
   log(task.id, `[INFO] Snapshot captured: ${snapshot.files.length} target files identified\n`);
+  
+  emitStep(runId, "coder", "Generating implementation with AI", undefined, { step_index: 2, step_total: 4, phase: "implement" });
   
   const prompt = `You are an expert programmer working on a codebase. Your task is to generate a unified diff.
 
@@ -366,6 +379,8 @@ Output ONLY the unified diff. No explanations before or after.`;
 `;
       storage.setArtifact(task.id, "patch_1.diff", stubDiff);
       log(task.id, "[SUCCESS] Implementation generated (stub mode)\n");
+      emitAgentStatus(runId, "coder", "done", "Implementation generated (stub mode)");
+      emitRunStatus(runId, "completed", "Implementation generated in stub mode");
       return;
     }
 
@@ -387,6 +402,7 @@ Output ONLY the unified diff. No explanations before or after.`;
       return;
     }
     
+    emitStep(runId, "coder", "Validating generated diff", undefined, { step_index: 3, step_total: 4, phase: "implement" });
     log(task.id, "\n[INFO] Validating diff...\n");
     const validation = validatePatch(extractedDiff, cwd);
     storage.setArtifact(task.id, "validation.txt", formatValidationErrors(validation));
@@ -398,10 +414,17 @@ Output ONLY the unified diff. No explanations before or after.`;
     }
     
     storage.setArtifact(task.id, "patch_1.diff", extractedDiff);
+    emitStep(runId, "coder", "Implementation complete", undefined, { step_index: 4, step_total: 4, phase: "implement" });
     log(task.id, "[SUCCESS] Implementation diff generated and validated\n");
+    
+    const filesInPatch = validation.hunks.map(h => h.newPath || h.oldPath).filter((p): p is string => !!p);
+    emitProposeChangeset(runId, "coder", filesInPatch, `Proposed changes to ${filesInPatch.length} file(s)`);
+    emitAgentStatus(runId, "coder", "done", "Implementation completed");
+    emitRunStatus(runId, "needs_approval", "Diff ready for review");
     
   } catch (error: any) {
     log(task.id, `[ERROR] Implementation failed: ${error.message}\n`);
+    emitAgentStatus(runId, "coder", "error", error.message);
     throw error;
   }
 }
@@ -451,6 +474,8 @@ ${task.goal}
 `;
       storage.setArtifact(task.id, "review.md", stubReview);
       log(task.id, "[SUCCESS] Review generated (stub mode)\n");
+      emitAgentStatus(runId, "reviewer", "done", "Review generated (stub mode)");
+      emitRunStatus(runId, "completed", "Review generated in stub mode");
       return;
     }
 
@@ -463,8 +488,11 @@ ${task.goal}
 
     storage.setArtifact(task.id, "review.md", response);
     log(task.id, "[SUCCESS] Review completed\n");
+    emitAgentStatus(runId, "reviewer", "done", "Code review completed");
+    emitRunStatus(runId, "completed", "Review completed successfully");
   } catch (error: any) {
     log(task.id, `[ERROR] Review failed: ${error.message}\n`);
+    emitAgentStatus(runId, "reviewer", "error", error.message);
     throw error;
   }
 }
@@ -482,6 +510,7 @@ async function runTestMode(task: Task, ollama: OllamaAdapter): Promise<void> {
   const cwd = path.resolve(task.repoPath);
   
   log(task.id, "[INFO] Attempting to run pytest...\n");
+  emitToolCall(runId, "testfixer", "python3 -m pytest -v", "Running pytest test suite");
   const pytestResult = runCommand(["python3", "-m", "pytest", "-v"], cwd);
   
   let testOutput = "";
@@ -517,6 +546,13 @@ Provide complete, runnable pytest code.`;
   }
 
   storage.setArtifact(task.id, "test.log", testOutput);
+  
+  if (pytestResult.exitCode === 0) {
+    emitAgentStatus(runId, "testfixer", "done", "All tests passed");
+    emitRunStatus(runId, "completed", "Tests completed successfully");
+  } else if (!pytestResult.stderr.includes("No module named pytest")) {
+    emitAgentStatus(runId, "testfixer", "error", "Tests failed");
+  }
 }
 
 interface VerifyResult {
@@ -528,9 +564,13 @@ interface VerifyResult {
   durationMs: number;
 }
 
-async function runVerifyStep(cwd: string, verifyCommand?: string): Promise<VerifyResult> {
+async function runVerifyStep(cwd: string, verifyCommand?: string, runId?: string): Promise<VerifyResult> {
   const command = verifyCommand || "npm test";
   const startTime = Date.now();
+  
+  if (runId) {
+    emitToolCall(runId, "testfixer", command, `Running verification: ${command}`);
+  }
   
   const parts = command.split(" ");
   const [cmd, ...args] = parts;
@@ -558,10 +598,15 @@ async function runTestFixerLoop(
   const cwd = path.resolve(task.repoPath);
   const limits = getTrustLimits(trustSettings);
   
+  const runId = getRunIdForTask(task.id);
+  
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(task.id, `[INFO] TestFixer attempt ${attempt}/${maxAttempts}\n`);
+    if (runId) {
+      emitStep(runId, "testfixer", `Verification attempt ${attempt}/${maxAttempts}`, undefined, { step_index: attempt, step_total: maxAttempts, phase: "verify" });
+    }
     
-    const verifyResult = await runVerifyStep(cwd, verifyCommand);
+    const verifyResult = await runVerifyStep(cwd, verifyCommand, runId);
     storage.setArtifact(task.id, `verify_attempt_${attempt}.json`, JSON.stringify(verifyResult, null, 2));
     
     if (verifyResult.passed) {
@@ -862,6 +907,13 @@ export async function applyTaskDiff(
   
   if (result.success) {
     gitSnapshot(cwd, `SimpleAide: Applied ${diffName} for "${task.goal}"`);
+    
+    const runId = getRunIdForTask(taskId);
+    if (runId) {
+      for (const filePath of result.filesModified || []) {
+        emitWriteFile(runId, "coder", filePath);
+      }
+    }
     
     storage.setArtifact(taskId, `${diffName}.applied_files.txt`, 
       (result.filesModified || []).join("\n")

@@ -69,8 +69,15 @@ function getEventDescription(event: AIRunEvent): string {
       return payload.message as string || `Run ${payload.status}`;
     case "AGENT_STATUS":
       return payload.message as string || `Agent ${payload.status}`;
-    case "STEP":
-      return payload.message as string || "Processing...";
+    case "STEP": {
+      const message = payload.message as string || "Processing...";
+      const stepIndex = payload.step_index as number | undefined;
+      const stepTotal = payload.step_total as number | undefined;
+      const phase = payload.phase as string | undefined;
+      const progress = stepIndex && stepTotal ? ` (${stepIndex}/${stepTotal})` : "";
+      const phaseLabel = phase ? `[${phase}] ` : "";
+      return `${phaseLabel}${message}${progress}`;
+    }
     case "READ_FILE":
       return `Read ${payload.path || "file"}`;
     case "WRITE_FILE":

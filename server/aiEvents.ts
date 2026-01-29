@@ -5,7 +5,7 @@ const eventBus = new EventEmitter();
 eventBus.setMaxListeners(100);
 
 export type RunEventType = AiRunEvent["type"];
-export type AgentStatus = "idle" | "working" | "waiting" | "error";
+export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
 
 const CRITICAL_EVENT_TYPES: RunEventType[] = [
   "RUN_STATUS",
@@ -91,6 +91,7 @@ export function emitAgentStatus(runId: string, agentId: string, status: AgentSta
     idle: `${agentId} is idle`,
     working: `${agentId} is working`,
     waiting: `${agentId} is waiting`,
+    done: `${agentId} completed`,
     error: `${agentId} encountered an error`
   };
   
@@ -103,13 +104,19 @@ export function emitAgentStatus(runId: string, agentId: string, status: AgentSta
   });
 }
 
-export function emitStep(runId: string, agentId: string, message: string, data?: Record<string, unknown>): AiRunEvent | null {
+export interface StepProgress {
+  step_index?: number;
+  step_total?: number;
+  phase?: string;
+}
+
+export function emitStep(runId: string, agentId: string, message: string, data?: Record<string, unknown>, progress?: StepProgress): AiRunEvent | null {
   return emitRunEvent({
     runId,
     agentId,
     type: "STEP",
     message,
-    data
+    data: { ...data, ...progress }
   });
 }
 

@@ -154,21 +154,31 @@ The agent code editing pipeline includes comprehensive trust hardening features 
   - Displays clear warning with file lists
 
 ### Real-Time Agent Visibility System
-The application includes a real-time agent activity monitoring system:
+The application includes a real-time agent activity monitoring system (Nanocoder-inspired improvements):
 
 - **Agent Profiles Database** (`server/aiDb.ts`):
   - SQLite tables for agent_profiles, ai_runs, and ai_run_events
   - Stores 5 seeded agent roles: Planner, Coder, Reviewer, TestFixer, Doc
+  - Extended profile fields: model, max_context_tokens, default_temperature, tools_enabled, system_prompt, enabled
   - Indexed for fast event queries by run_id and agent_role
 
 - **Event Emitter** (`server/aiEvents.ts`):
   - In-process pub/sub for real-time event broadcasting
   - Event types: RUN_STATUS, AGENT_STATUS, STEP, READ_FILE, WRITE_FILE, TOOL_CALL, ERROR, PROPOSE_CHANGESET, NEEDS_APPROVAL
+  - StepProgress interface for progress tracking: step_index, step_total, phase
   - Dual-write to database and SSE broadcast
   - Fast/Accurate mode telemetry filtering:
     - Critical events (RUN_STATUS, ERROR, NEEDS_APPROVAL, AGENT_STATUS, PROPOSE_CHANGESET) always emit
     - Verbose events (READ_FILE, TOOL_CALL, NOTE) are skipped when run is in fast_mode
     - STEP and WRITE_FILE events emit in both modes
+
+- **Granular Event Emissions** (`server/taskRunner.ts`):
+  - emitReadFile: Emits for each file during repo snapshot capture
+  - emitWriteFile: Emits for each file modified by patch apply
+  - emitToolCall: Emits for verification commands (pytest, npm test, etc.)
+  - emitProposeChangeset: Emits when diffs are generated with file list
+  - "done" status: Emitted after agent completes (plan, implement, review, test)
+  - Progress tracking: Step indices for plan (1-2), implement (1-4), verify phases
 
 - **SSE Streaming Endpoint** (`/api/ai/stream`):
   - Server-Sent Events for real-time updates
@@ -179,11 +189,13 @@ The application includes a real-time agent activity monitoring system:
 - **Agent Roster UI** (`client/src/components/AgentRosterCard.tsx`):
   - Visual agent cards with status indicators (idle, working, waiting, done, error)
   - Color-coded avatars with role-specific emojis
+  - Model badges showing configured LLM model per agent
   - Compact and expanded display modes
 
 - **Activity Timeline** (`client/src/components/ActivityTimeline.tsx`):
   - Real-time event feed with timestamp formatting
   - Event-type icons and color coding
+  - Progress indicators: Shows [phase] step X/Y for STEP events
   - Agent attribution with profile colors
   - ScrollArea with auto-scroll behavior
 
@@ -191,6 +203,7 @@ The application includes a real-time agent activity monitoring system:
   - React hook for SSE subscription
   - Auto-reconnect on connection loss
   - State management for events, runs, and agent profiles
+  - Extended AgentProfile type with model/context/temperature fields
 
 ### Security
 - **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.

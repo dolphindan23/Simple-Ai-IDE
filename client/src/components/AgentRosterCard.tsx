@@ -40,7 +40,14 @@ export function AgentRosterCard({ profile, status, lastActivity, compact }: Agen
           {profile.avatar_emoji}
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-medium truncate">{profile.display_name}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-medium truncate">{profile.display_name}</span>
+            {profile.model && (
+              <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground">
+                {profile.model}
+              </Badge>
+            )}
+          </div>
         </div>
         <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColors[status])}>
           {statusLabels[status]}
@@ -63,8 +70,13 @@ export function AgentRosterCard({ profile, status, lastActivity, compact }: Agen
             {profile.avatar_emoji}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm">{profile.display_name}</span>
+              {profile.model && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground">
+                  {profile.model}
+                </Badge>
+              )}
               <Badge
                 variant="outline"
                 className={cn("text-[10px] px-1.5 py-0", statusColors[status])}

@@ -52,7 +52,16 @@ export interface AgentProfile {
   description: string | null;
   avatar_emoji: string;
   color_hex: string;
+  model: string | null;
+  max_context_tokens: number | null;
+  system_prompt: string | null;
+  default_temperature: number | null;
+  tools_enabled: string[] | null;
+  risk_tolerance: string | null;
+  verbosity: string | null;
+  enabled: boolean;
   created_at: string;
+  updated_at: string | null;
 }
 
 interface UseAIRunEventsResult {
