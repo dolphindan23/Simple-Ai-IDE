@@ -1,0 +1,11 @@
+{
+  "models": {
+    "codellama:latest": {
+      "type": "code",
+      "preference": "balanced",
+      "defaultNumCtx": 4096,
+      "notes": "Test model"
+    }
+  },
+  "updatedAt": "2026-01-29T13:09:40.733Z"
+}

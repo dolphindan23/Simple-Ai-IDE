@@ -1,0 +1,41 @@
+{
+  "general": {
+    "theme": "dark",
+    "autoSaveDelay": 1000,
+    "showHiddenFiles": false
+  },
+  "editor": {
+    "fontSize": 14,
+    "tabSize": 2,
+    "wordWrap": "on",
+    "minimap": true,
+    "lineNumbers": "on",
+    "fontFamily": "JetBrains Mono, monospace"
+  },
+  "ai": {
+    "autoSave": true
+  },
+  "integrations": {
+    "kaggle": {
+      "enabled": false
+    },
+    "huggingface": {
+      "enabled": false
+    },
+    "ngc": {
+      "enabled": false
+    }
+  },
+  "aiAgents": {
+    "backends": [
+      {
+        "id": "backend_1769692276258",
+        "name": "Test Ollama",
+        "baseUrl": "http://localhost:11434",
+        "authType": "none"
+      }
+    ],
+    "defaultBackendId": "backend_1769692276258",
+    "roles": {}
+  }
+}
