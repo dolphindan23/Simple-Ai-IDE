@@ -193,6 +193,7 @@ The app serves on port 8521 with both frontend and backend.
 - 2026-01-29: Vault reset and custom APIs - Added vault reset button with confirmation dialog, added Custom tab for user-defined API services with name/key/endpoint storage
 - 2026-01-29: Phase D1 - Workflow Engine with checkpoints: Added TaskRun/StepRun types, file-based runs storage (.simpleaide/runs/), REST APIs for run management (create, list, execute step, rerun from checkpoint), Run Timeline UI with step status visualization and artifact viewing
 - 2026-01-29: Phase D2 - Autonomous test/fix loop: Added auto workflow (Plan→Code→Apply→Test→Fix chain), file backup/restore for safe diff application, TestFixer retry loop (max 3 attempts), Apply Diff buttons in UI
+- 2026-01-29: Phase D2 Security - Added path traversal prevention (isPathSafe/sanitizePath), diff header validation before apply, concurrent run protection (runningWorkflows Set), chmod 0600 on all modified/backup/restored files
 
 ## Workflow Engine (Phase D)
 

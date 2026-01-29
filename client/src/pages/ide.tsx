@@ -756,22 +756,13 @@ export default function IDEPage() {
                 )}
                 
                 {activeTab === "developer" && (
-                  <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
-                    <div className="text-center">
-                      <Construction className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm font-medium">Developer Tools</p>
-                      <p className="text-xs opacity-60 mt-1">Dev tools coming soon</p>
-                    </div>
-                  </div>
+                  <RunTimeline />
                 )}
                 
                 {activeTab === "ai-agents" && (
                   <AIAgentsPanel />
                 )}
                 
-                {activeTab === "runs" && (
-                  <RunTimeline />
-                )}
                 
                 {/* Terminal - always visible when not hidden, on Editor tab */}
                 {activeTab === "editor" && (
