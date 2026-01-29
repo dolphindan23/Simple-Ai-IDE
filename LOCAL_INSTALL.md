@@ -51,7 +51,7 @@ npm install
 npm run dev
 ```
 
-The application will start on **http://localhost:5000**
+The application will start on **http://localhost:8521**
 
 ## Docker Installation (Optional)
 
@@ -66,7 +66,7 @@ services:
   simpleaide:
     build: .
     ports:
-      - "5000:5000"
+      - "8521:8521"
     volumes:
       - ./workspace:/app/workspace
       - simpleaide-data:/app/.simpleaide
@@ -98,7 +98,7 @@ COPY . .
 RUN npm run build
 
 # Expose port
-EXPOSE 5000
+EXPOSE 8521
 
 # Start the application
 CMD ["npm", "start"]
@@ -157,10 +157,10 @@ For AI features, install and configure Ollama:
 
 ## Troubleshooting
 
-### Port 5000 in use
+### Port 8521 in use
 ```bash
-# Find process using port 5000
-lsof -i :5000
+# Find process using port 8521
+lsof -i :8521
 # Or change port in package.json
 ```
 
@@ -182,7 +182,7 @@ chmod 700 .simpleaide/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| PORT | Server port | 5000 |
+| PORT | Server port | 8521 |
 | NODE_ENV | Environment mode | development |
 
 ## License

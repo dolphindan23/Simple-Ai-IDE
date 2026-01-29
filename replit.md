@@ -164,7 +164,7 @@ To use with Ollama:
 npm run dev
 ```
 
-The app serves on port 5000 with both frontend and backend.
+The app serves on port 8521 with both frontend and backend.
 
 ### Technology Stack
 - **Frontend**: React 18, TanStack Query, Monaco Editor, Tailwind CSS, shadcn/ui
