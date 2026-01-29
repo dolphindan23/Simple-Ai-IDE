@@ -192,6 +192,7 @@ The app serves on port 8521 with both frontend and backend.
 - 2026-01-29: Streamlined UI - Moved Secrets/Vault and API Integrations to dedicated Secrets workspace tab, Settings modal now only has General and Editor tabs (2 tabs)
 - 2026-01-29: Vault reset and custom APIs - Added vault reset button with confirmation dialog, added Custom tab for user-defined API services with name/key/endpoint storage
 - 2026-01-29: Phase D1 - Workflow Engine with checkpoints: Added TaskRun/StepRun types, file-based runs storage (.simpleaide/runs/), REST APIs for run management (create, list, execute step, rerun from checkpoint), Run Timeline UI with step status visualization and artifact viewing
+- 2026-01-29: Phase D2 - Autonomous test/fix loop: Added auto workflow (Plan→Code→Apply→Test→Fix chain), file backup/restore for safe diff application, TestFixer retry loop (max 3 attempts), Apply Diff buttons in UI
 
 ## Workflow Engine (Phase D)
 
@@ -231,3 +232,25 @@ The app serves on port 8521 with both frontend and backend.
 
 ### Step Statuses
 - pending, running, passed, failed, skipped
+
+### Phase D2: Auto Workflow
+The auto workflow chains steps together automatically:
+1. **Plan** - Generate implementation plan
+2. **Implement** - Generate code as unified diff
+3. **Apply** - Apply diff to files (with backup)
+4. **Test** - Run npm test
+5. **Fix** - If tests fail, generate fix diff and retry (max 3 attempts)
+6. **Review** - Final code review
+
+### Backup System
+- Backups stored in `.simpleaide/backups/<backupId>/`
+- Files backed up before diff application
+- Can revert using backup ID
+- Automatic cleanup after successful workflow
+
+### Auto Workflow API Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/runs/:id/auto | Start autonomous workflow |
+| POST | /api/runs/:id/steps/:stepNum/apply | Apply a diff with backup |
+| POST | /api/runs/revert | Revert changes using backup ID |

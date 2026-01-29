@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
 import { runsStorage } from "./runs";
+import { runAutoWorkflow, applyDiffWithBackup, revertDiff, isWorkflowRunning } from "./autoRunner";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -1277,6 +1278,110 @@ export async function registerRoutes(
 
       const updatedRun = await runsStorage.getRun(runId);
       res.json({ success: true, run: updatedRun });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== Phase D2: Auto Workflow API ====================
+
+  // Start autonomous workflow (Plan→Code→Apply→Test→Fix chain)
+  app.post("/api/runs/:id/auto", async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      
+      if (isWorkflowRunning(runId)) {
+        return res.status(409).json({ error: "Workflow is already running" });
+      }
+      
+      const run = await runsStorage.getRun(runId);
+      
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      if (run.metadata.status === "running") {
+        return res.status(409).json({ error: "Run is already in progress" });
+      }
+
+      const { skipTests = false } = req.body;
+
+      runAutoWorkflow({
+        runId,
+        goal: run.metadata.goal,
+        repoPath: run.metadata.repoPath,
+        skipTests,
+      }).catch(console.error);
+
+      res.json({ 
+        success: true, 
+        message: "Auto workflow started",
+        runId,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Apply a diff from a step with backup
+  app.post("/api/runs/:id/steps/:stepNum/apply", async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      const stepNum = parseInt(req.params.stepNum, 10);
+      
+      if (isWorkflowRunning(runId)) {
+        return res.status(409).json({ error: "Cannot apply diff while workflow is running" });
+      }
+      
+      const run = await runsStorage.getRun(runId);
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const step = run.steps.find(s => s.stepNumber === stepNum);
+      if (!step) {
+        return res.status(404).json({ error: "Step not found" });
+      }
+
+      if (step.stepType !== "implement" && step.stepType !== "fix") {
+        return res.status(400).json({ error: "Only implement and fix steps can be applied" });
+      }
+
+      const result = await applyDiffWithBackup(runId, stepNum, step.stepType);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: "Diff applied successfully",
+          backupId: result.backupId,
+        });
+      } else {
+        res.status(400).json({ 
+          success: false, 
+          error: result.error,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Revert changes using a backup
+  app.post("/api/runs/revert", async (req: Request, res: Response) => {
+    try {
+      const { backupId } = req.body;
+      
+      if (!backupId) {
+        return res.status(400).json({ error: "backupId is required" });
+      }
+
+      const result = await revertDiff(backupId);
+      
+      if (result.success) {
+        res.json({ success: true, message: "Changes reverted successfully" });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

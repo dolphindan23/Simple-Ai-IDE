@@ -29,7 +29,9 @@ import {
   Plus,
   RotateCcw,
   Eye,
-  History
+  History,
+  Zap,
+  Download
 } from "lucide-react";
 import type { TaskRun, RunMetadata, StepRun, StepType, StepStatus, RunStatus } from "@shared/schema";
 
@@ -188,6 +190,49 @@ export function RunTimeline({ onViewArtifact }: RunTimelineProps) {
     },
   });
 
+  // Auto workflow mutation
+  const autoRunMutation = useMutation({
+    mutationFn: async ({ runId, skipTests = false }: { runId: string; skipTests?: boolean }) => {
+      const response = await apiRequest("POST", `/api/runs/${runId}/auto`, { skipTests });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchRun();
+      toast({
+        title: "Auto workflow started",
+        description: "Running Plan → Code → Apply → Test → Fix chain...",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Auto workflow failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Apply diff mutation
+  const applyDiffMutation = useMutation({
+    mutationFn: async ({ runId, stepNum }: { runId: string; stepNum: number }) => {
+      const response = await apiRequest("POST", `/api/runs/${runId}/steps/${stepNum}/apply`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Diff applied",
+        description: data.backupId ? `Backup created: ${data.backupId}` : "Changes applied successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Apply failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Fetch artifact using apiRequest for consistent error handling
   const fetchArtifact = async (runId: string, stepNumber: number, artifactName: string) => {
     try {
@@ -302,7 +347,7 @@ export function RunTimeline({ onViewArtifact }: RunTimelineProps) {
                   </Badge>
                 </div>
 
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Select
                     value={selectedStepType}
                     onValueChange={(v) => setSelectedStepType(v as StepType)}
@@ -324,7 +369,7 @@ export function RunTimeline({ onViewArtifact }: RunTimelineProps) {
                       runId: currentRun.metadata.id,
                       stepType: selectedStepType,
                     })}
-                    disabled={executeStepMutation.isPending}
+                    disabled={executeStepMutation.isPending || currentRun.metadata.status === "running"}
                     data-testid="button-execute-step"
                   >
                     {executeStepMutation.isPending ? (
@@ -333,6 +378,22 @@ export function RunTimeline({ onViewArtifact }: RunTimelineProps) {
                       <Play className="h-4 w-4 mr-1" />
                     )}
                     Execute
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => autoRunMutation.mutate({
+                      runId: currentRun.metadata.id,
+                    })}
+                    disabled={autoRunMutation.isPending || currentRun.metadata.status === "running"}
+                    data-testid="button-auto-run"
+                  >
+                    {autoRunMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Zap className="h-4 w-4 mr-1" />
+                    )}
+                    Auto
                   </Button>
                 </div>
               </div>
@@ -406,7 +467,24 @@ export function RunTimeline({ onViewArtifact }: RunTimelineProps) {
                                   </div>
                                 )}
 
-                                <div className="mt-2 flex gap-1">
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {(step.stepType === "implement" || step.stepType === "fix") && 
+                                    step.statusMeta.status === "passed" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 text-xs"
+                                      onClick={() => applyDiffMutation.mutate({
+                                        runId: currentRun.metadata.id,
+                                        stepNum: step.stepNumber,
+                                      })}
+                                      disabled={applyDiffMutation.isPending}
+                                      data-testid={`apply-diff-${step.stepNumber}`}
+                                    >
+                                      <Download className="h-3 w-3 mr-1" />
+                                      Apply Diff
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="ghost"
