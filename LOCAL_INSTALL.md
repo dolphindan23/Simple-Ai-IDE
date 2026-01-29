@@ -331,6 +331,81 @@ If the Activity Timeline doesn't update in real-time:
 - The system falls back to polling automatically
 - Ensure `/api/ai/stream` endpoint is accessible
 
+## Testing AI Visibility System
+
+SimpleAide includes tools for verifying the real-time agent visibility pipeline.
+
+### Automated Smoke Test
+
+Run the visibility smoke test to validate all event types fire correctly:
+
+```bash
+# With server already running:
+node script/smoke-ai-visibility.mjs
+
+# Or auto-start server:
+START_SERVER=1 node script/smoke-ai-visibility.mjs
+```
+
+The smoke test:
+1. Connects to the SSE stream (`/api/ai/stream`)
+2. Triggers an implement task
+3. Validates required events arrive:
+   - `READ_FILE` (during snapshot capture)
+   - `WRITE_FILE` (when patch applied)
+   - `TOOL_CALL` (verification commands)
+   - `PROPOSE_CHANGESET` (when diff generated)
+   - `AGENT_STATUS` with `done` status
+   - `STEP` with progress fields (`step_index`, `step_total`, `phase`)
+
+Environment overrides:
+```bash
+BASE_URL=http://localhost:5000
+MODE=implement
+GOAL="Your test goal"
+TIMEOUT_MS=60000
+```
+
+### Manual Curl Tests
+
+**Check agent profiles (validates schema + typing):**
+```bash
+curl -s http://localhost:5000/api/ai/agent-profiles | jq .
+```
+Should show: `model`, `max_context_tokens`, `default_temperature`, `tools_enabled`, `system_prompt`, `enabled`.
+
+**SSE stream (validates real-time updates):**
+```bash
+curl -N http://localhost:5000/api/ai/stream
+```
+Expected output:
+- Initial snapshot event
+- Periodic heartbeat
+- Live events during runs
+
+**Trigger a test run:**
+```bash
+curl -s -X POST http://localhost:5000/api/task/start \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"SMOKE: trivial change + verify","mode":"implement","repoPath":"'"$PWD"'"}' | jq .
+```
+
+While running, the SSE stream should show:
+- `AGENT_STATUS` with `status:"done"`
+- `READ_FILE` events
+- `WRITE_FILE` events
+- `TOOL_CALL` events
+- `PROPOSE_CHANGESET` events
+- `STEP` events with progress fields
+
+### UI Verification
+
+After a run completes:
+1. Refresh the page - timeline should rehydrate from stored events
+2. Agent roster shows correct final statuses (including "done")
+3. Model badges render correctly on agent cards
+4. Progress indicators show `[phase] step X/Y` format
+
 ## Building for Production
 
 ```bash
