@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Code2 } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2 } from "lucide-react";
 import type { Settings as SettingsType } from "@shared/schema";
+import { useTheme, type Theme } from "./ThemeProvider";
 
 interface SettingsModalProps {
   open: boolean;
@@ -20,6 +21,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { toast } = useToast();
+  const { setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsType | null>(null);
 
   const { data: savedSettings, isLoading } = useQuery<SettingsType>({
@@ -39,6 +41,12 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      if (settings?.general.theme && settings.general.theme !== "system") {
+        setTheme(settings.general.theme as Theme);
+      } else if (settings?.general.theme === "system") {
+        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        setTheme(systemTheme as Theme);
+      }
       toast({ title: "Settings saved", description: "Your preferences have been updated." });
     },
     onError: (error: Error) => {
@@ -98,7 +106,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   <SelectContent>
                     <SelectItem value="light"><div className="flex items-center gap-2"><Sun className="w-4 h-4" /> Light</div></SelectItem>
                     <SelectItem value="dark"><div className="flex items-center gap-2"><Moon className="w-4 h-4" /> Dark</div></SelectItem>
-                    <SelectItem value="terminal-noir"><div className="flex items-center gap-2"><Monitor className="w-4 h-4" /> Terminal Noir</div></SelectItem>
+                    <SelectItem value="terminal-noir"><div className="flex items-center gap-2"><Terminal className="w-4 h-4" /> Terminal Noir</div></SelectItem>
                     <SelectItem value="system"><div className="flex items-center gap-2"><Monitor className="w-4 h-4" /> System</div></SelectItem>
                   </SelectContent>
                 </Select>
