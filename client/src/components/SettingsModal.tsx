@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Code2, Bot, Puzzle, Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key, Loader2, CheckCircle, XCircle, Zap } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Code2, Puzzle, Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key, Loader2, CheckCircle, XCircle, Zap } from "lucide-react";
 import type { Settings as SettingsType } from "@shared/schema";
 
 interface VaultStatus {
@@ -232,7 +232,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-5" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-4" data-testid="settings-tabs">
             <TabsTrigger value="general" className="flex items-center gap-1" data-testid="tab-general">
               <Monitor className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -240,10 +240,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <TabsTrigger value="editor" className="flex items-center gap-1" data-testid="tab-editor">
               <Code2 className="w-4 h-4" />
               <span className="hidden sm:inline">Editor</span>
-            </TabsTrigger>
-            <TabsTrigger value="ai" className="flex items-center gap-1" data-testid="tab-ai">
-              <Bot className="w-4 h-4" />
-              <span className="hidden sm:inline">AI</span>
             </TabsTrigger>
             <TabsTrigger value="integrations" className="flex items-center gap-1" data-testid="tab-integrations">
               <Puzzle className="w-4 h-4" />
@@ -433,53 +429,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   })}
                   placeholder="JetBrains Mono, monospace"
                   data-testid="input-font-family"
-                />
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="ai" className="space-y-4 mt-4" data-testid="panel-ai">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Ollama URL</Label>
-                <p className="text-sm text-muted-foreground">URL of your Ollama server</p>
-                <Input
-                  value={settings.ai.ollamaUrl}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    ai: { ...settings.ai, ollamaUrl: e.target.value }
-                  })}
-                  placeholder="http://localhost:11434"
-                  data-testid="input-ollama-url"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Ollama Model</Label>
-                <p className="text-sm text-muted-foreground">Which LLM model to use</p>
-                <Input
-                  value={settings.ai.ollamaModel}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    ai: { ...settings.ai, ollamaModel: e.target.value }
-                  })}
-                  placeholder="codellama"
-                  data-testid="input-ollama-model"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Auto-Save Before AI Tasks</Label>
-                  <p className="text-sm text-muted-foreground">Save files before running AI workflows</p>
-                </div>
-                <Switch
-                  checked={settings.ai.autoSave}
-                  onCheckedChange={(checked) => setSettings({
-                    ...settings,
-                    ai: { ...settings.ai, autoSave: checked }
-                  })}
-                  data-testid="switch-ai-autosave"
                 />
               </div>
             </div>

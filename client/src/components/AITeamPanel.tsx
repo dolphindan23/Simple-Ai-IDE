@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,9 +17,6 @@ interface AITeamPanelProps {
   artifacts: Artifact[];
   onApplyDiff: (diffName: string) => void;
   isLoading: boolean;
-  ollamaUrl: string;
-  ollamaModel: string;
-  onSettingsChange: (url: string, model: string) => void;
 }
 
 function ArtifactCard({ artifact, onApply }: { artifact: Artifact; onApply?: () => void }) {
@@ -109,19 +106,7 @@ export function AITeamPanel({
   artifacts,
   onApplyDiff,
   isLoading,
-  ollamaUrl,
-  ollamaModel,
-  onSettingsChange,
 }: AITeamPanelProps) {
-  const [showSettings, setShowSettings] = useState(false);
-  const [tempUrl, setTempUrl] = useState(ollamaUrl);
-  const [tempModel, setTempModel] = useState(ollamaModel);
-
-  const handleSaveSettings = () => {
-    onSettingsChange(tempUrl, tempModel);
-    setShowSettings(false);
-  };
-
   const getStatusBadge = () => {
     if (!currentTask) return null;
     
@@ -162,56 +147,11 @@ export function AITeamPanel({
         </div>
         <div className="flex items-center gap-2">
           {getStatusBadge()}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setShowSettings(!showSettings)}
-            data-testid="button-settings"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {/* Ollama Settings */}
-          {showSettings && (
-            <Card>
-              <CardHeader className="p-3 pb-2">
-                <CardTitle className="text-sm">Ollama Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 pt-0 space-y-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Base URL</label>
-                  <input
-                    type="text"
-                    value={tempUrl}
-                    onChange={(e) => setTempUrl(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm bg-input border border-border rounded-md"
-                    placeholder="http://localhost:11434"
-                    data-testid="input-ollama-url"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Model</label>
-                  <input
-                    type="text"
-                    value={tempModel}
-                    onChange={(e) => setTempModel(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm bg-input border border-border rounded-md"
-                    placeholder="codellama"
-                    data-testid="input-ollama-model"
-                  />
-                </div>
-                <Button size="sm" onClick={handleSaveSettings} className="w-full" data-testid="button-save-settings">
-                  Save Settings
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Goal Input */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -318,7 +258,7 @@ export function AITeamPanel({
                 Enter a goal and click an action to get started
               </p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Powered by Ollama
+                Configure AI backends in AI Agents tab
               </p>
             </div>
           )}

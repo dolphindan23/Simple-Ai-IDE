@@ -79,8 +79,6 @@ export const editorSettingsSchema = z.object({
 });
 
 export const aiSettingsSchema = z.object({
-  ollamaUrl: z.string().url().default("http://localhost:11434"),
-  ollamaModel: z.string().default("codellama"),
   autoSave: z.boolean().default(true),
 });
 

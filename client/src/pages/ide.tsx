@@ -33,8 +33,6 @@ export default function IDEPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("codellama");
   
   // Workspace header state
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("editor");
@@ -413,22 +411,6 @@ export default function IDEPage() {
   const handleClearLogs = () => {
     setLogs([]);
   };
-
-  const handleSettingsChange = (url: string, model: string) => {
-    setOllamaUrl(url);
-    setOllamaModel(model);
-    // Save to localStorage for persistence
-    localStorage.setItem("ollama-url", url);
-    localStorage.setItem("ollama-model", model);
-  };
-
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const savedUrl = localStorage.getItem("ollama-url");
-    const savedModel = localStorage.getItem("ollama-model");
-    if (savedUrl) setOllamaUrl(savedUrl);
-    if (savedModel) setOllamaModel(savedModel);
-  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -830,9 +812,6 @@ export default function IDEPage() {
               artifacts={artifacts}
               onApplyDiff={handleApplyDiff}
               isLoading={createTaskMutation.isPending}
-              ollamaUrl={ollamaUrl}
-              ollamaModel={ollamaModel}
-              onSettingsChange={handleSettingsChange}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
