@@ -1,12 +1,19 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Pencil, Trash2, Copy, FilePlus, FolderPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FileNode } from "@shared/schema";
 
 interface FileTreeProps {
   files: FileNode[];
   selectedPath: string | null;
   onSelectFile: (path: string) => void;
+  onRename?: (path: string) => void;
+  onDelete?: (path: string) => void;
+  onCopyPath?: (path: string) => void;
+  onNewFile?: (folderPath: string) => void;
+  onNewFolder?: (folderPath: string) => void;
 }
 
 interface FileTreeNodeProps {
@@ -14,10 +21,16 @@ interface FileTreeNodeProps {
   depth: number;
   selectedPath: string | null;
   onSelectFile: (path: string) => void;
+  onRename?: (path: string) => void;
+  onDelete?: (path: string) => void;
+  onCopyPath?: (path: string) => void;
+  onNewFile?: (folderPath: string) => void;
+  onNewFolder?: (folderPath: string) => void;
 }
 
-function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder }: FileTreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(depth < 2);
+  const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedPath === node.path;
   const isDirectory = node.type === "directory";
 
@@ -27,6 +40,11 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeP
     } else {
       onSelectFile(node.path);
     }
+  };
+
+  const handleAction = (e: React.MouseEvent, action: () => void) => {
+    e.stopPropagation();
+    action();
   };
 
   const getFileIcon = (name: string) => {
@@ -57,11 +75,13 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeP
 
   return (
     <div>
-      <button
+      <div
         data-testid={`file-tree-node-${node.path}`}
         onClick={handleClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         className={cn(
-          "flex items-center gap-1 w-full px-2 py-1 text-sm text-left hover-elevate rounded-sm transition-colors",
+          "group flex items-center gap-1 w-full px-2 py-1 text-sm text-left hover-elevate rounded-sm transition-colors cursor-pointer",
           isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -85,8 +105,101 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeP
             {getFileIcon(node.name)}
           </>
         )}
-        <span className="truncate">{node.name}</span>
-      </button>
+        <span className="truncate flex-1">{node.name}</span>
+        
+        {/* Hover Actions */}
+        <div 
+          className={cn(
+            "flex items-center gap-0.5 transition-opacity",
+            isHovered ? "opacity-100" : "opacity-0"
+          )}
+        >
+          {isDirectory ? (
+            <>
+              {onNewFile && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={(e) => handleAction(e, () => onNewFile(node.path))}
+                      data-testid={`btn-new-file-${node.path}`}
+                    >
+                      <FilePlus className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">New File</TooltipContent>
+                </Tooltip>
+              )}
+              {onNewFolder && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={(e) => handleAction(e, () => onNewFolder(node.path))}
+                      data-testid={`btn-new-folder-${node.path}`}
+                    >
+                      <FolderPlus className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">New Folder</TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          ) : null}
+          {onRename && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => handleAction(e, () => onRename(node.path))}
+                  data-testid={`btn-rename-${node.path}`}
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">Rename</TooltipContent>
+            </Tooltip>
+          )}
+          {onCopyPath && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => handleAction(e, () => onCopyPath(node.path))}
+                  data-testid={`btn-copy-path-${node.path}`}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">Copy Path</TooltipContent>
+            </Tooltip>
+          )}
+          {onDelete && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 text-destructive hover:text-destructive"
+                  onClick={(e) => handleAction(e, () => onDelete(node.path))}
+                  data-testid={`btn-delete-${node.path}`}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">Delete</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </div>
       
       {isDirectory && isExpanded && node.children && (
         <div>
@@ -97,6 +210,11 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeP
               depth={depth + 1}
               selectedPath={selectedPath}
               onSelectFile={onSelectFile}
+              onRename={onRename}
+              onDelete={onDelete}
+              onCopyPath={onCopyPath}
+              onNewFile={onNewFile}
+              onNewFolder={onNewFolder}
             />
           ))}
         </div>
@@ -105,7 +223,7 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile }: FileTreeNodeP
   );
 }
 
-export function FileTree({ files, selectedPath, onSelectFile }: FileTreeProps) {
+export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder }: FileTreeProps) {
   if (files.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm p-4">
@@ -124,6 +242,11 @@ export function FileTree({ files, selectedPath, onSelectFile }: FileTreeProps) {
           depth={0}
           selectedPath={selectedPath}
           onSelectFile={onSelectFile}
+          onRename={onRename}
+          onDelete={onDelete}
+          onCopyPath={onCopyPath}
+          onNewFile={onNewFile}
+          onNewFolder={onNewFolder}
         />
       ))}
     </div>

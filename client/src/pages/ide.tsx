@@ -6,6 +6,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useTheme } from "@/components/ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -55,7 +56,11 @@ export default function IDEPage() {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [dialogInput, setDialogInput] = useState("");
+  const [targetFolderPath, setTargetFolderPath] = useState<string>("");
+  const [pathToRename, setPathToRename] = useState<string | null>(null);
+  const [pathToDelete, setPathToDelete] = useState<string | null>(null);
   
   // Persist terminal state
   useEffect(() => {
@@ -258,6 +263,11 @@ export default function IDEPage() {
           terminalRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 100);
       }
+      // Ctrl/Cmd+K - Command palette
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowCommandPalette(true);
+      }
     };
     
     window.addEventListener("keydown", handleKeyDown);
@@ -265,12 +275,42 @@ export default function IDEPage() {
   }, [selectedFile, isDirty, saveFileMutation, terminalState]);
 
   // Copy path to clipboard
-  const handleCopyPath = useCallback(() => {
-    if (selectedFile) {
-      navigator.clipboard.writeText(selectedFile);
+  const handleCopyPath = useCallback((path?: string) => {
+    const pathToCopy = path || selectedFile;
+    if (pathToCopy) {
+      navigator.clipboard.writeText(pathToCopy);
       toast({ title: "Path copied to clipboard" });
     }
   }, [selectedFile, toast]);
+
+  // File tree hover action handlers
+  const handleNewFileInFolder = useCallback((folderPath: string) => {
+    setTargetFolderPath(folderPath);
+    setDialogInput(folderPath + "/");
+    setShowNewFileDialog(true);
+  }, []);
+
+  const handleNewFolderInFolder = useCallback((folderPath: string) => {
+    setTargetFolderPath(folderPath);
+    setDialogInput(folderPath + "/");
+    setShowNewFolderDialog(true);
+  }, []);
+
+  const handleRenameFromTree = useCallback((path: string) => {
+    setPathToRename(path);
+    setDialogInput(path);
+    setShowRenameDialog(true);
+  }, []);
+
+  const handleDeleteFromTree = useCallback((path: string) => {
+    setPathToDelete(path);
+    setShowDeleteDialog(true);
+  }, []);
+
+  // Command palette handlers
+  const handleToggleTerminal = useCallback(() => {
+    setTerminalState(prev => prev === "collapsed" ? "expanded" : "collapsed");
+  }, []);
 
   // Create task mutation
   const createTaskMutation = useMutation({
@@ -483,7 +523,7 @@ export default function IDEPage() {
                 Duplicate
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={handleCopyPath}
+                onClick={() => handleCopyPath()}
                 disabled={!selectedFile}
                 data-testid="menu-copy-path"
               >
@@ -607,7 +647,7 @@ export default function IDEPage() {
       </Dialog>
 
       {/* Rename Dialog */}
-      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+      <Dialog open={showRenameDialog} onOpenChange={(open) => { setShowRenameDialog(open); if (!open) setPathToRename(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Rename</DialogTitle>
@@ -622,15 +662,17 @@ export default function IDEPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowRenameDialog(false); setPathToRename(null); }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (selectedFile && dialogInput.trim() && dialogInput !== selectedFile) {
-                  renameMutation.mutate({ oldPath: selectedFile, newPath: dialogInput.trim() });
+                const oldPath = pathToRename || selectedFile;
+                if (oldPath && dialogInput.trim() && dialogInput !== oldPath) {
+                  renameMutation.mutate({ oldPath, newPath: dialogInput.trim() });
                   setShowRenameDialog(false);
+                  setPathToRename(null);
                 }
               }}
-              disabled={!dialogInput.trim() || dialogInput === selectedFile}
+              disabled={!dialogInput.trim() || dialogInput === (pathToRename || selectedFile)}
               data-testid="button-rename"
             >
               Rename
@@ -646,16 +688,18 @@ export default function IDEPage() {
             <DialogTitle>Delete File</DialogTitle>
           </DialogHeader>
           <p className="py-4 text-sm text-muted-foreground">
-            Are you sure you want to delete <strong>{selectedFile}</strong>? This action cannot be undone.
+            Are you sure you want to delete <strong>{pathToDelete || selectedFile}</strong>? This action cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setPathToDelete(null); }}>Cancel</Button>
             <Button
               variant="destructive"
               onClick={() => {
-                if (selectedFile) {
-                  deleteMutation.mutate(selectedFile);
+                const targetPath = pathToDelete || selectedFile;
+                if (targetPath) {
+                  deleteMutation.mutate(targetPath);
                   setShowDeleteDialog(false);
+                  setPathToDelete(null);
                 }
               }}
               data-testid="button-confirm-delete"
@@ -665,6 +709,21 @@ export default function IDEPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Command Palette */}
+      <CommandPalette
+        open={showCommandPalette}
+        onOpenChange={setShowCommandPalette}
+        files={files}
+        onSelectFile={(path) => {
+          setSelectedFile(path);
+          setActiveTab("editor");
+        }}
+        onToggleTerminal={handleToggleTerminal}
+        onSwitchTab={(tab) => setActiveTab(tab as WorkspaceTab)}
+        onRunAction={(action) => handleRunTask(action)}
+        onOpenSettings={() => setShowSettingsDialog(true)}
+      />
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
@@ -682,6 +741,11 @@ export default function IDEPage() {
                   files={files}
                   selectedPath={selectedFile}
                   onSelectFile={setSelectedFile}
+                  onRename={handleRenameFromTree}
+                  onDelete={handleDeleteFromTree}
+                  onCopyPath={handleCopyPath}
+                  onNewFile={handleNewFileInFolder}
+                  onNewFolder={handleNewFolderInFolder}
                 />
               </div>
             </div>
