@@ -2,10 +2,11 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { runTask, applyTaskDiff } from "./taskRunner";
-import { createTaskSchema, settingsSchema, defaultSettings, type Settings } from "@shared/schema";
+import { createTaskSchema, settingsSchema, defaultSettings, type Settings, createRunSchema, executeStepSchema, rerunSchema } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
+import { runsStorage } from "./runs";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -1047,6 +1048,237 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ success: false, error: error.message });
       }
+    }
+  });
+
+  // ============================================
+  // Workflow Runs API (Phase D1)
+  // ============================================
+
+  // Create a new run
+  app.post("/api/runs", async (req: Request, res: Response) => {
+    try {
+      const parsed = createRunSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const run = await runsStorage.createRun(parsed.data);
+      res.json(run);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List all runs
+  app.get("/api/runs", async (req: Request, res: Response) => {
+    try {
+      const runs = await runsStorage.listRuns();
+      res.json({ runs });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get a specific run with all steps
+  app.get("/api/runs/:id", async (req: Request, res: Response) => {
+    try {
+      const run = await runsStorage.getRun(req.params.id);
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      res.json(run);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Execute a step in a run
+  app.post("/api/runs/:id/step", async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      const run = await runsStorage.getRun(runId);
+      
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const parsed = executeStepSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const { stepType, input } = parsed.data;
+
+      // Update run status to running if pending
+      if (run.metadata.status === "pending") {
+        await runsStorage.updateRunStatus(runId, "running");
+      }
+
+      // Create the step
+      const step = await runsStorage.createStep(runId, stepType, input || {
+        filesReferenced: [],
+      });
+
+      // Update step to running
+      await runsStorage.updateStepStatus(runId, step.stepNumber, stepType, "running");
+
+      // Execute the step (placeholder - actual execution will be added in D2)
+      const startTime = Date.now();
+      
+      try {
+        // Simulate step execution - will be replaced with actual AI calls
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // For now, save a placeholder artifact based on step type
+        let artifactName = "";
+        let artifactContent = "";
+        
+        switch (stepType) {
+          case "plan":
+            artifactName = "plan.json";
+            artifactContent = JSON.stringify({
+              goal: run.metadata.goal,
+              steps: ["Step 1: Analyze requirements", "Step 2: Implement changes", "Step 3: Test"],
+              generatedAt: new Date().toISOString(),
+            }, null, 2);
+            break;
+          case "implement":
+            artifactName = "patch.diff";
+            artifactContent = `--- a/placeholder.txt\n+++ b/placeholder.txt\n@@ -1 +1 @@\n-old content\n+new content for: ${run.metadata.goal}`;
+            break;
+          case "review":
+            artifactName = "review.md";
+            artifactContent = `# Code Review\n\n## Summary\nReview for: ${run.metadata.goal}\n\n## Findings\n- No issues found\n\n## Recommendations\n- All looks good`;
+            break;
+          case "test":
+            artifactName = "test.log";
+            artifactContent = `[TEST] Running tests for: ${run.metadata.goal}\n[PASS] All tests passed`;
+            break;
+          case "fix":
+            artifactName = "fix.diff";
+            artifactContent = `--- a/placeholder.txt\n+++ b/placeholder.txt\n@@ -1 +1 @@\n-buggy content\n+fixed content`;
+            break;
+        }
+
+        if (artifactName) {
+          await runsStorage.saveStepArtifact(runId, step.stepNumber, stepType, artifactName, artifactContent);
+        }
+
+        const durationMs = Date.now() - startTime;
+        await runsStorage.updateStepStatus(runId, step.stepNumber, stepType, "passed", durationMs);
+
+        // Return updated step
+        const updatedRun = await runsStorage.getRun(runId);
+        const updatedStep = updatedRun?.steps.find(s => s.stepNumber === step.stepNumber);
+        
+        res.json({ 
+          success: true, 
+          step: updatedStep,
+          artifactName,
+        });
+      } catch (stepError: any) {
+        const durationMs = Date.now() - startTime;
+        await runsStorage.updateStepStatus(runId, step.stepNumber, stepType, "failed", durationMs, stepError.message);
+        await runsStorage.updateRunStatus(runId, "failed", stepError.message);
+        
+        res.status(500).json({ 
+          success: false, 
+          error: stepError.message,
+          step,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get step artifact
+  app.get("/api/runs/:id/steps/:stepNum/artifact/:name", async (req: Request, res: Response) => {
+    try {
+      const { id: runId, stepNum, name } = req.params;
+      const stepNumber = parseInt(stepNum, 10);
+      
+      const run = await runsStorage.getRun(runId);
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const step = run.steps.find(s => s.stepNumber === stepNumber);
+      if (!step) {
+        return res.status(404).json({ error: "Step not found" });
+      }
+
+      const content = await runsStorage.getStepArtifact(runId, stepNumber, step.stepType, name);
+      if (!content) {
+        return res.status(404).json({ error: "Artifact not found" });
+      }
+
+      res.json({ name, content });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Rerun from a specific step
+  app.post("/api/runs/:id/rerun", async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      const run = await runsStorage.getRun(runId);
+      
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const parsed = rerunSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+
+      const { fromStep } = parsed.data;
+
+      if (fromStep > run.metadata.stepCount) {
+        return res.status(400).json({ error: `Step ${fromStep} does not exist. Run has ${run.metadata.stepCount} steps.` });
+      }
+
+      // Delete steps from fromStep onwards
+      await runsStorage.deleteStepsFrom(runId, fromStep);
+
+      // Get updated run state
+      const updatedRun = await runsStorage.getRun(runId);
+
+      res.json({ 
+        success: true, 
+        message: `Ready to rerun from step ${fromStep}`,
+        run: updatedRun,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Complete a run
+  app.post("/api/runs/:id/complete", async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      const run = await runsStorage.getRun(runId);
+      
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const { status = "completed", errorMessage } = req.body;
+
+      if (!["completed", "failed", "cancelled"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be completed, failed, or cancelled." });
+      }
+
+      await runsStorage.updateRunStatus(runId, status, errorMessage);
+
+      const updatedRun = await runsStorage.getRun(runId);
+      res.json({ success: true, run: updatedRun });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

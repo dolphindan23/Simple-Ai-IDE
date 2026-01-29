@@ -150,3 +150,90 @@ export type IntegrationSettings = z.infer<typeof integrationSettingsSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
 
 export const defaultSettings: Settings = settingsSchema.parse({});
+
+// ==================== Phase D1: Workflow Engine Types ====================
+
+// Step types for workflow runs
+export const stepTypeSchema = z.enum(["plan", "implement", "review", "test", "fix"]);
+export type StepType = z.infer<typeof stepTypeSchema>;
+
+// Step status
+export const stepStatusSchema = z.enum(["pending", "running", "passed", "failed", "skipped"]);
+export type StepStatus = z.infer<typeof stepStatusSchema>;
+
+// Run status
+export const runStatusSchema = z.enum(["pending", "running", "completed", "failed", "cancelled"]);
+export type RunStatus = z.infer<typeof runStatusSchema>;
+
+// Step input - what the step was given
+export const stepInputSchema = z.object({
+  role: agentRoleSchema.optional(),
+  backendId: z.string().optional(),
+  model: z.string().optional(),
+  filesReferenced: z.array(z.string()).default([]),
+  prompt: z.string().optional(),
+});
+export type StepInput = z.infer<typeof stepInputSchema>;
+
+// Step status metadata
+export const stepStatusMetaSchema = z.object({
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  durationMs: z.number().optional(),
+  status: stepStatusSchema,
+  errorMessage: z.string().optional(),
+});
+export type StepStatusMeta = z.infer<typeof stepStatusMetaSchema>;
+
+// A single step run within a workflow run
+export const stepRunSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  stepNumber: z.number(),
+  stepType: stepTypeSchema,
+  stepName: z.string(),
+  input: stepInputSchema,
+  statusMeta: stepStatusMetaSchema,
+  artifactNames: z.array(z.string()).default([]),
+});
+export type StepRun = z.infer<typeof stepRunSchema>;
+
+// Run metadata stored in run.json
+export const runMetadataSchema = z.object({
+  id: z.string(),
+  goal: z.string(),
+  repoPath: z.string(),
+  startedAt: z.string(),
+  completedAt: z.string().optional(),
+  status: runStatusSchema,
+  stepCount: z.number().default(0),
+  errorMessage: z.string().optional(),
+});
+export type RunMetadata = z.infer<typeof runMetadataSchema>;
+
+// Full run state including all steps
+export const taskRunSchema = z.object({
+  metadata: runMetadataSchema,
+  steps: z.array(stepRunSchema).default([]),
+});
+export type TaskRun = z.infer<typeof taskRunSchema>;
+
+// Create run request
+export const createRunSchema = z.object({
+  goal: z.string().min(1, "Goal is required"),
+  repoPath: z.string().default("."),
+});
+export type CreateRun = z.infer<typeof createRunSchema>;
+
+// Execute step request
+export const executeStepSchema = z.object({
+  stepType: stepTypeSchema,
+  input: stepInputSchema.optional(),
+});
+export type ExecuteStep = z.infer<typeof executeStepSchema>;
+
+// Rerun request
+export const rerunSchema = z.object({
+  fromStep: z.number().min(1),
+});
+export type RerunRequest = z.infer<typeof rerunSchema>;
