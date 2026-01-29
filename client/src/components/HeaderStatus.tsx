@@ -7,7 +7,9 @@ import {
   Database, 
   Cpu, 
   Play,
-  AlertCircle
+  AlertCircle,
+  PanelTopClose,
+  PanelTop
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WorkspaceTab } from "./WorkspaceHeader";
@@ -78,20 +80,20 @@ function StatusChip({ label, status, icon: Icon, tooltip, onClick }: StatusChipP
         <button
           onClick={onClick}
           className={cn(
-            "flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border transition-opacity",
+            "flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded border transition-opacity",
             "hover:opacity-80",
             statusColors[status],
             onClick ? "cursor-pointer" : "cursor-default"
           )}
           data-testid={`status-chip-${label.toLowerCase().replace(/\s/g, "-")}`}
         >
-          <Icon className="h-3 w-3" />
+          <Icon className="h-2.5 w-2.5" />
           <span>{label}</span>
-          <span className={cn("w-1.5 h-1.5 rounded-full", statusDots[status])} />
+          <span className={cn("w-1 h-1 rounded-full", statusDots[status])} />
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs">
-        <p className="text-xs">{tooltip}</p>
+        <p className="text-[10px]">{tooltip}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -99,9 +101,11 @@ function StatusChip({ label, status, icon: Icon, tooltip, onClick }: StatusChipP
 
 interface HeaderStatusProps {
   onNavigate: (tab: WorkspaceTab) => void;
+  showMainHeader: boolean;
+  onToggleMainHeader: () => void;
 }
 
-export function HeaderStatus({ onNavigate }: HeaderStatusProps) {
+export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }: HeaderStatusProps) {
   const { data: status, isLoading, error } = useQuery<StatusResponse>({
     queryKey: ["/api/status"],
     refetchInterval: 5000,
@@ -110,10 +114,10 @@ export function HeaderStatus({ onNavigate }: HeaderStatusProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-1.5">
-        <div className="h-6 w-16 bg-muted animate-pulse rounded" />
-        <div className="h-6 w-14 bg-muted animate-pulse rounded" />
-        <div className="h-6 w-14 bg-muted animate-pulse rounded" />
+      <div className="flex items-center gap-1">
+        <div className="h-4 w-12 bg-muted animate-pulse rounded" />
+        <div className="h-4 w-10 bg-muted animate-pulse rounded" />
+        <div className="h-4 w-10 bg-muted animate-pulse rounded" />
       </div>
     );
   }
@@ -166,7 +170,27 @@ export function HeaderStatus({ onNavigate }: HeaderStatusProps) {
   };
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
+      {/* Toggle main header visibility */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={onToggleMainHeader}
+            className="flex items-center justify-center h-4 w-4 text-muted-foreground hover:text-foreground transition-colors rounded"
+            data-testid="button-toggle-main-header"
+          >
+            {showMainHeader ? (
+              <PanelTopClose className="h-2.5 w-2.5" />
+            ) : (
+              <PanelTop className="h-2.5 w-2.5" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <p className="text-[10px]">{showMainHeader ? "Hide header" : "Show header"}</p>
+        </TooltipContent>
+      </Tooltip>
+
       <StatusChip
         label={status.env}
         status={status.env === "PROD" ? "warning" : "neutral"}

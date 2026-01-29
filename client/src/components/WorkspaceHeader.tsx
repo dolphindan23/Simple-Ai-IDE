@@ -28,7 +28,7 @@ interface WorkspaceHeaderProps {
 
 export function WorkspaceHeader({ activeTab, onTabChange }: WorkspaceHeaderProps) {
   return (
-    <div className="flex items-center h-9 px-1 gap-0.5 shrink-0">
+    <div className="flex items-center h-6 px-0.5 gap-0 shrink-0">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;
@@ -38,7 +38,7 @@ export function WorkspaceHeader({ activeTab, onTabChange }: WorkspaceHeaderProps
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "flex items-center gap-1.5 px-3 h-7 text-xs font-medium rounded-sm transition-colors",
+              "flex items-center gap-1 px-2 h-5 text-[10px] font-medium rounded-sm transition-colors",
               "hover-elevate",
               isActive
                 ? "bg-background text-foreground shadow-sm"
@@ -46,7 +46,7 @@ export function WorkspaceHeader({ activeTab, onTabChange }: WorkspaceHeaderProps
             )}
             data-testid={`tab-workspace-${tab.id}`}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className="h-2.5 w-2.5" />
             <span>{tab.label}</span>
           </button>
         );

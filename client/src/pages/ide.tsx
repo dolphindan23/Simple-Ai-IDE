@@ -43,6 +43,7 @@ export default function IDEPage() {
   
   // Workspace header state
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("editor");
+  const [showMainHeader, setShowMainHeader] = useState(true);
   
   // Terminal state with persistence
   const [terminalState, setTerminalState] = useState<TerminalState>(() => {
@@ -509,21 +510,22 @@ export default function IDEPage() {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <header className="h-12 flex items-center justify-between px-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-              <FolderTree className="h-4 w-4 text-primary-foreground" />
+      {showMainHeader && (
+      <header className="h-7 flex items-center justify-between px-2 border-b border-border bg-card">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 rounded bg-primary flex items-center justify-center">
+              <FolderTree className="h-2.5 w-2.5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sm">SimpleAide</span>
-            {isDirty && <span className="text-xs text-muted-foreground">(unsaved)</span>}
+            <span className="font-semibold text-[10px]">SimpleAide</span>
+            {isDirty && <span className="text-[9px] text-muted-foreground">(unsaved)</span>}
           </div>
           
           {/* File Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" data-testid="button-file-menu">
-                <Menu className="h-4 w-4 mr-1" />
+              <Button variant="ghost" className="h-5 px-1.5 text-[10px]" data-testid="button-file-menu">
+                <Menu className="h-2.5 w-2.5 mr-0.5" />
                 File
               </Button>
             </DropdownMenuTrigger>
@@ -595,37 +597,38 @@ export default function IDEPage() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
-            size="icon"
+            className="h-5 w-5 p-0"
             onClick={() => refetchFiles()}
             data-testid="button-refresh-files"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="h-2.5 w-2.5" />
           </Button>
           <Button
             variant="ghost"
-            size="icon"
+            className="h-5 w-5 p-0"
             onClick={() => setShowSettingsDialog(true)}
             data-testid="button-settings"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-2.5 w-2.5" />
           </Button>
           <Button
             variant="ghost"
-            size="icon"
+            className="h-5 w-5 p-0"
             onClick={toggleTheme}
             data-testid="button-toggle-theme"
           >
             {theme === "dark" ? (
-              <Sun className="h-4 w-4" />
+              <Sun className="h-2.5 w-2.5" />
             ) : (
-              <Moon className="h-4 w-4" />
+              <Moon className="h-2.5 w-2.5" />
             )}
           </Button>
         </div>
       </header>
+      )}
 
       {/* Settings Modal */}
       <SettingsModal open={showSettingsDialog} onOpenChange={setShowSettingsDialog} />
@@ -809,8 +812,12 @@ export default function IDEPage() {
           <ResizablePanel defaultSize={55}>
             <div className="h-full flex flex-col">
               {/* Global Status Header */}
-              <div className="flex items-center justify-end h-8 bg-background border-b border-border px-2 shrink-0">
-                <HeaderStatus onNavigate={handleTabChange} />
+              <div className="flex items-center justify-end h-5 bg-background border-b border-border px-1 shrink-0">
+                <HeaderStatus 
+                  onNavigate={handleTabChange} 
+                  showMainHeader={showMainHeader}
+                  onToggleMainHeader={() => setShowMainHeader(!showMainHeader)}
+                />
               </div>
               
               {/* Workspace Tabs */}
