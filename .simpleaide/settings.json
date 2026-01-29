@@ -31,7 +31,7 @@
       {
         "id": "backend_1769692276258",
         "name": "Test Ollama",
-        "baseUrl": "http://localhost:11434",
+        "baseUrl": "https://192.168.8.227:11434",
         "authType": "none"
       }
     ],
