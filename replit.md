@@ -45,9 +45,39 @@ The backend provides API services for file system operations, AI orchestration, 
 - **Fast/Accurate Toggle**: Allows dynamic switching between different AI model configurations for task execution.
 
 ### Workflow Engine
-- **Task Modes**: Supports Plan, Implement, Test, and Review modes for structured AI interaction.
+- **Task Modes**: Supports Plan, Implement, Test, Review, and Verify modes for structured AI interaction.
 - **Autonomous Workflow**: Automates a sequence of Plan → Code → Apply → Test → Fix → Review, including file backups and test-fix retry loops for robust development.
 - **Run Storage**: Stores workflow run metadata, step details, and artifacts in `.simpleaide/runs/` for traceability and re-execution.
+
+### Code Editing Reliability System
+The agent code editing pipeline includes several reliability enhancements:
+
+- **Repo Snapshot** (`server/repoSnapshot.ts`): Before generating code, captures:
+  - File tree structure (respects common ignore patterns)
+  - Target file contents with hash and line count
+  - Provides context to AI for accurate diff generation
+
+- **Patch Validator** (`server/patchValidator.ts`): Validates diffs before applying:
+  - Checks file existence (modify existing, create new)
+  - Validates new-file format (`--- /dev/null`)
+  - Detects path traversal attempts
+  - Reports validation errors and warnings
+
+- **Enhanced Apply**: The `applyDiff` function supports:
+  - Standard file modifications via `git apply`
+  - New file creation (`--- /dev/null`)
+  - File deletion (`+++ /dev/null`)
+  - Returns list of modified files
+
+- **Verify Step**: Runs configured test/build commands after applying changes:
+  - Captures exit code, stdout, stderr, and duration
+  - Supports any command (npm test, pytest, etc.)
+
+- **TestFixer Retry Loop**: Auto-fixes failing tests (max 3 attempts):
+  - Captures failure logs and feeds to AI
+  - Generates fix diffs with repo context
+  - Validates and applies fixes iteratively
+  - Stores all attempt artifacts for debugging
 
 ### Security
 - **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.

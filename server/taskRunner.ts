@@ -587,6 +587,41 @@ Output ONLY the unified diff. No explanations.`;
   return { success: finalResult.passed, attempts: maxAttempts, finalResult };
 }
 
+async function runVerifyMode(task: Task): Promise<void> {
+  log(task.id, `[INFO] Starting verification...\n`);
+  
+  const cwd = path.resolve(task.repoPath);
+  const verifyCommand = task.goal || "npm test";
+  
+  log(task.id, `[INFO] Running: ${verifyCommand}\n`);
+  
+  const result = await runVerifyStep(cwd, verifyCommand);
+  
+  storage.setArtifact(task.id, "verify_result.json", JSON.stringify(result, null, 2));
+  
+  if (result.passed) {
+    log(task.id, `[SUCCESS] Verification passed (${result.durationMs}ms)\n`);
+  } else {
+    log(task.id, `[ERROR] Verification failed (exit code ${result.exitCode})\n`);
+    if (result.stderr) {
+      log(task.id, `[STDERR] ${result.stderr.slice(0, 1000)}\n`);
+    }
+  }
+  
+  storage.setArtifact(task.id, "verify.log", 
+    `# Verification Results\n\n` +
+    `Command: ${result.command}\n` +
+    `Exit Code: ${result.exitCode}\n` +
+    `Duration: ${result.durationMs}ms\n\n` +
+    `## STDOUT\n\`\`\`\n${result.stdout}\n\`\`\`\n\n` +
+    `## STDERR\n\`\`\`\n${result.stderr}\n\`\`\`\n`
+  );
+  
+  if (!result.passed) {
+    throw new Error(`Verification failed: ${verifyCommand}`);
+  }
+}
+
 export async function runTask(taskId: string): Promise<void> {
   const task = await storage.getTask(taskId);
   if (!task) {
@@ -612,6 +647,9 @@ export async function runTask(taskId: string): Promise<void> {
         break;
       case "test":
         await runTestMode(task, ollama);
+        break;
+      case "verify":
+        await runVerifyMode(task);
         break;
       default:
         throw new Error(`Unknown mode: ${task.mode}`);

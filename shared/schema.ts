@@ -18,7 +18,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
 // Task mode types
-export type TaskMode = "plan" | "implement" | "review" | "test";
+export type TaskMode = "plan" | "implement" | "review" | "test" | "verify";
 export type TaskStatus = "queued" | "running" | "done" | "error";
 
 // Task schema for in-memory storage
@@ -26,7 +26,7 @@ export const taskSchema = z.object({
   id: z.string(),
   repoPath: z.string(),
   goal: z.string(),
-  mode: z.enum(["plan", "implement", "review", "test"]),
+  mode: z.enum(["plan", "implement", "review", "test", "verify"]),
   status: z.enum(["queued", "running", "done", "error"]),
   createdAt: z.string(),
   error: z.string().optional(),
@@ -38,7 +38,7 @@ export type Task = z.infer<typeof taskSchema>;
 export const createTaskSchema = z.object({
   repoPath: z.string().default("."),
   goal: z.string().min(1, "Goal is required"),
-  mode: z.enum(["plan", "implement", "review", "test"]).default("implement"),
+  mode: z.enum(["plan", "implement", "review", "test", "verify"]).default("implement"),
   accurateMode: z.boolean().default(false),
 });
 
