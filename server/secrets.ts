@@ -10,7 +10,7 @@ const SALT_LENGTH = 32;
 const PBKDF2_ITERATIONS = 100000;
 
 const PROJECT_ROOT = path.resolve(process.cwd());
-const SECRETS_DIR = path.join(PROJECT_ROOT, ".simpleide");
+const SECRETS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
 const SECRETS_FILE = path.join(SECRETS_DIR, "secrets.enc");
 
 interface SecretsVault {

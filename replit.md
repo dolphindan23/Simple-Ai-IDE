@@ -1,15 +1,15 @@
-# SimpleIDE - AI-Powered Coding Workspace
+# SimpleAide - AI-Powered Coding Workspace
 
 ## Overview
-SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-agent workflow. It features a Monaco-based code editor, file tree explorer, terminal output panel, and an AI Team sidebar that can generate plans, implement code, run tests, and review changes.
+SimpleAide is a minimal, Replit-style coding workspace with an AI-powered multi-agent workflow. It features a Monaco-based code editor, file tree explorer, terminal output panel, and an AI Team sidebar that can generate plans, implement code, run tests, and review changes.
 
 ## Key Features
 - **Workspace Header**: Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer, AI Agents tabs
 - **File Tree**: Browse project files with collapsible folders
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
-- **Settings System**: Persistent settings in .simpleide/settings.json with 2 tabs (General, Editor)
-- **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection and vault reset capability
+- **Settings System**: Persistent settings in .simpleaide/settings.json with 2 tabs (General, Editor)
+- **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleaide/secrets.enc with master password protection and vault reset capability
 - **Custom API Services**: Store any user-defined API services (OpenAI, Anthropic, etc.) with custom names and endpoints
 - **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
@@ -75,7 +75,7 @@ shared/
 | POST | /api/fs/rename | Rename file or folder |
 | POST | /api/fs/delete | Delete file or folder |
 | POST | /api/fs/duplicate | Duplicate file |
-| GET | /api/settings | Get settings from .simpleide/settings.json |
+| GET | /api/settings | Get settings from .simpleaide/settings.json |
 | PUT | /api/settings | Save all settings |
 | PATCH | /api/settings/:section | Update specific settings section |
 | GET | /api/secrets/status | Check vault exists/unlocked status |
@@ -125,7 +125,7 @@ The `/api/ai-agents/chat` endpoint routes requests based on role:
 The secrets vault provides secure storage for API keys and tokens:
 - **Encryption**: AES-256-GCM with random IV
 - **Key Derivation**: PBKDF2 with 100,000 iterations and random salt
-- **Storage**: .simpleide/secrets.enc (encrypted blob)
+- **Storage**: .simpleaide/secrets.enc (encrypted blob)
 - **Session**: In-memory unlock state (cleared on server restart)
 
 Expected secret keys for integrations:
@@ -142,7 +142,7 @@ Expected secret keys for integrations:
 
 ## Ollama Integration
 
-SimpleIDE uses Ollama as the AI backend. Default configuration:
+SimpleAide uses Ollama as the AI backend. Default configuration:
 - Base URL: `http://localhost:11434`
 - Model: `codellama`
 
@@ -152,7 +152,7 @@ To use with Ollama:
 1. Install Ollama: https://ollama.ai
 2. Pull a model: `ollama pull codellama`
 3. Run Ollama: `ollama serve`
-4. Configure URL/model in SimpleIDE settings
+4. Configure URL/model in SimpleAide settings
 
 ## Development
 
@@ -181,7 +181,7 @@ The app serves on port 5000 with both frontend and backend.
 ## Recent Changes
 - 2026-01-29: Initial MVP with file tree, Monaco editor, AI Team panel, and Ollama integration
 - 2026-01-29: Phase A - Added full file editing capabilities with dirty state tracking, Ctrl+S save, and File menu (New File, New Folder, Rename, Delete, Duplicate, Copy Path)
-- 2026-01-29: Phase B - Added Settings modal with 5 tabs (General, Editor, AI, Integrations, Security), persisted to .simpleide/settings.json
+- 2026-01-29: Phase B - Added Settings modal with 5 tabs (General, Editor, AI, Integrations, Security), persisted to .simpleaide/settings.json
 - 2026-01-29: Phase C1 - Added encrypted secrets vault with AES-256-GCM encryption, master password unlock, and CRUD operations
 - 2026-01-29: Phase C2 - Added Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - 2026-01-29: Security hardening - File permissions (0600), redactSecrets() log scrubber, vault auto-lock (15 min default), LOCAL_INSTALL.md

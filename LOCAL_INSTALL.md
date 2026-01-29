@@ -1,6 +1,6 @@
-# SimpleIDE Local Installation Guide
+# SimpleAide Local Installation Guide
 
-This guide covers how to install and run SimpleIDE on your local machine.
+This guide covers how to install and run SimpleAide on your local machine.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ npm --version
 
 ```bash
 git clone <repository-url>
-cd simpleide
+cd simpleaide
 ```
 
 ### 3. Install Dependencies
@@ -63,19 +63,19 @@ For containerized deployment, use Docker Compose:
 version: '3.8'
 
 services:
-  simpleide:
+  simpleaide:
     build: .
     ports:
       - "5000:5000"
     volumes:
       - ./workspace:/app/workspace
-      - simpleide-data:/app/.simpleide
+      - simpleaide-data:/app/.simpleaide
     environment:
       - NODE_ENV=production
     restart: unless-stopped
 
 volumes:
-  simpleide-data:
+  simpleaide-data:
 ```
 
 ### Dockerfile
@@ -121,7 +121,7 @@ docker-compose down
 
 ### Secrets Vault
 
-SimpleIDE includes an encrypted secrets vault for storing API keys:
+SimpleAide includes an encrypted secrets vault for storing API keys:
 
 1. Open Settings (gear icon)
 2. Go to the Security/Vault tab
@@ -131,7 +131,7 @@ SimpleIDE includes an encrypted secrets vault for storing API keys:
    - `HUGGINGFACE_TOKEN` - For HuggingFace integration
    - `NGC_API_KEY` - For NVIDIA NGC integration
 
-The vault uses AES-256-GCM encryption and is stored in `.simpleide/secrets.enc`
+The vault uses AES-256-GCM encryption and is stored in `.simpleaide/secrets.enc`
 
 ### Ollama (AI Backend)
 
@@ -146,14 +146,14 @@ For AI features, install and configure Ollama:
    ```bash
    ollama serve
    ```
-4. Configure in SimpleIDE Settings > AI tab
+4. Configure in SimpleAide Settings > AI tab
 
 ## Security Notes
 
-- The secrets vault file (`.simpleide/secrets.enc`) has 0600 permissions (owner read/write only)
+- The secrets vault file (`.simpleaide/secrets.enc`) has 0600 permissions (owner read/write only)
 - The vault auto-locks after 15 minutes of inactivity (configurable)
-- Never commit `.simpleide/secrets.enc` to version control
-- Add `.simpleide/` to your `.gitignore`
+- Never commit `.simpleaide/secrets.enc` to version control
+- Add `.simpleaide/` to your `.gitignore`
 
 ## Troubleshooting
 
@@ -174,8 +174,8 @@ nvm use 20
 ### Permissions issues on secrets file
 ```bash
 # Fix permissions (Unix/macOS)
-chmod 600 .simpleide/secrets.enc
-chmod 700 .simpleide/
+chmod 600 .simpleaide/secrets.enc
+chmod 700 .simpleaide/
 ```
 
 ## Environment Variables

@@ -58,7 +58,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
     });
 
     // Define custom dark theme
-    monaco.editor.defineTheme("simpleide-dark", {
+    monaco.editor.defineTheme("simpleaide-dark", {
       base: "vs-dark",
       inherit: true,
       rules: [
@@ -83,7 +83,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
     });
 
     // Define custom light theme
-    monaco.editor.defineTheme("simpleide-light", {
+    monaco.editor.defineTheme("simpleaide-light", {
       base: "vs",
       inherit: true,
       rules: [
@@ -106,7 +106,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
       },
     });
 
-    monaco.editor.setTheme(theme === "dark" ? "simpleide-dark" : "simpleide-light");
+    monaco.editor.setTheme(theme === "dark" ? "simpleaide-dark" : "simpleaide-light");
   };
 
   return (
@@ -115,7 +115,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
       defaultLanguage={language || getLanguageFromPath(path)}
       value={value}
       onChange={onChange}
-      theme={theme === "dark" ? "simpleide-dark" : "simpleide-light"}
+      theme={theme === "dark" ? "simpleaide-dark" : "simpleaide-light"}
       onMount={handleEditorMount}
       loading={
         <div className="flex items-center justify-center h-full bg-background">

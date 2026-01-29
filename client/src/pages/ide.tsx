@@ -40,11 +40,11 @@ export default function IDEPage() {
   
   // Terminal state with persistence
   const [terminalState, setTerminalState] = useState<TerminalState>(() => {
-    const saved = localStorage.getItem("simpleide-terminal-state");
+    const saved = localStorage.getItem("simpleaide-terminal-state");
     return (saved as TerminalState) || "expanded";
   });
   const [terminalHeight, setTerminalHeight] = useState<number>(() => {
-    const saved = localStorage.getItem("simpleide-terminal-height");
+    const saved = localStorage.getItem("simpleaide-terminal-height");
     return saved ? parseInt(saved, 10) : 200;
   });
   
@@ -58,11 +58,11 @@ export default function IDEPage() {
   
   // Persist terminal state
   useEffect(() => {
-    localStorage.setItem("simpleide-terminal-state", terminalState);
+    localStorage.setItem("simpleaide-terminal-state", terminalState);
   }, [terminalState]);
   
   useEffect(() => {
-    localStorage.setItem("simpleide-terminal-height", terminalHeight.toString());
+    localStorage.setItem("simpleaide-terminal-height", terminalHeight.toString());
   }, [terminalHeight]);
   
   // Handle Console tab restoring terminal
@@ -422,7 +422,7 @@ export default function IDEPage() {
             <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
               <FolderTree className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sm">SimpleIDE</span>
+            <span className="font-semibold text-sm">SimpleAide</span>
             {isDirty && <span className="text-xs text-muted-foreground">(unsaved)</span>}
           </div>
           

@@ -46,7 +46,7 @@ function gitSnapshot(cwd: string, message: string): boolean {
 }
 
 function applyDiff(cwd: string, diffContent: string): { success: boolean; error?: string } {
-  const tempFile = path.join(cwd, ".simpleide-temp.patch");
+  const tempFile = path.join(cwd, ".simpleaide-temp.patch");
   
   try {
     fs.writeFileSync(tempFile, diffContent);
@@ -171,7 +171,7 @@ Example format:
 -# Project
 +# Project
 +
-+Updated by SimpleIDE agent for: ${task.goal}
++Updated by SimpleAide agent for: ${task.goal}
 `;
       storage.setArtifact(task.id, "patch_1.diff", stubDiff);
       log(task.id, "[SUCCESS] Implementation generated (stub mode)\n");
@@ -361,13 +361,13 @@ export async function applyTaskDiff(taskId: string, diffName: string): Promise<{
   const cwd = path.resolve(task.repoPath);
   
   // Create git snapshot before applying
-  gitSnapshot(cwd, `SimpleIDE: Before applying ${diffName}`);
+  gitSnapshot(cwd, `SimpleAide: Before applying ${diffName}`);
   
   // Apply the diff
   const result = applyDiff(cwd, diffContent);
   
   if (result.success) {
-    gitSnapshot(cwd, `SimpleIDE: Applied ${diffName} for "${task.goal}"`);
+    gitSnapshot(cwd, `SimpleAide: Applied ${diffName} for "${task.goal}"`);
   }
   
   return result;

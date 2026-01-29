@@ -8,7 +8,7 @@ import * as path from "path";
 import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
-const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleide");
+const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 
 function isPathSafe(targetPath: string): boolean {
