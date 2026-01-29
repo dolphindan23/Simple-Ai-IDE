@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction, ChevronLeft, ChevronRight } from "lucide-react";
+import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction, ChevronLeft, ChevronRight, ChevronDown, Minus } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
@@ -78,6 +78,9 @@ export default function IDEPage() {
   // Sidebar collapse state
   const [aiTeamCollapsed, setAiTeamCollapsed] = useState(false);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  
+  // Editor minimize state
+  const [editorMinimized, setEditorMinimized] = useState(false);
   
   // Persist terminal state
   useEffect(() => {
@@ -899,17 +902,30 @@ export default function IDEPage() {
               
               {/* File Tabs Bar - shown only when Editor tab is active */}
               {activeTab === "editor" && (
-                <FileTabsBar
-                  openFiles={openFiles}
-                  selectedFile={selectedFile}
-                  onSelectFile={handleSelectFile}
-                  onCloseFile={handleCloseFile}
-                />
+                <div className="flex items-center border-b border-border">
+                  <div className="flex-1 overflow-hidden">
+                    <FileTabsBar
+                      openFiles={openFiles}
+                      selectedFile={selectedFile}
+                      onSelectFile={handleSelectFile}
+                      onCloseFile={handleCloseFile}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="mr-1 shrink-0"
+                    onClick={() => setEditorMinimized(!editorMinimized)}
+                    data-testid="button-toggle-editor-minimize"
+                  >
+                    {editorMinimized ? <ChevronDown className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+                  </Button>
+                </div>
               )}
               
               {/* Main Workspace Content */}
               <div className="flex-1 overflow-hidden flex flex-col">
-                {activeTab === "editor" && (
+                {activeTab === "editor" && !editorMinimized && (
                   <div className="flex-1 overflow-hidden">
                     {selectedFile ? (
                       <CodeEditor
