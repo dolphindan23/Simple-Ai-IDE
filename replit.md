@@ -4,6 +4,7 @@
 SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-agent workflow. It features a Monaco-based code editor, file tree explorer, terminal output panel, and an AI Team sidebar that can generate plans, implement code, run tests, and review changes.
 
 ## Key Features
+- **Workspace Header**: Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer tabs
 - **File Tree**: Browse project files with collapsible folders
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
@@ -11,10 +12,11 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 - **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection
 - **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
-- **Terminal Panel**: View real-time task logs via SSE streaming
+- **Terminal Panel**: Collapsible/resizable output panel with 3 states (expanded/collapsed/hidden)
 - **Diff-First Approach**: AI generates diffs that users can review and apply
 - **Ollama Integration**: Uses local Ollama for AI capabilities (with graceful fallback to stubs)
 - **Dark/Light Theme**: Toggle between themes
+- **Keyboard Shortcuts**: Ctrl+S save, Ctrl+J toggle terminal, Ctrl+` show/focus terminal
 
 ## Architecture
 
@@ -22,16 +24,17 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 ```
 client/src/
 ├── components/
-│   ├── AITeamPanel.tsx    # AI workflow sidebar
-│   ├── CodeEditor.tsx     # Monaco editor wrapper
-│   ├── DiffViewer.tsx     # Unified diff display
-│   ├── FileTree.tsx       # Project file browser
-│   ├── SettingsModal.tsx  # Settings dialog with 5 tabs
-│   ├── TerminalPanel.tsx  # Log output display
-│   └── ThemeProvider.tsx  # Dark/light theme context
+│   ├── AITeamPanel.tsx      # AI workflow sidebar
+│   ├── CodeEditor.tsx       # Monaco editor wrapper
+│   ├── DiffViewer.tsx       # Unified diff display
+│   ├── FileTree.tsx         # Project file browser
+│   ├── SettingsModal.tsx    # Settings dialog with 5 tabs
+│   ├── TerminalPanel.tsx    # Log output with 3 states
+│   ├── ThemeProvider.tsx    # Dark/light theme context
+│   └── WorkspaceHeader.tsx  # Tab bar (Editor/Preview/etc.)
 ├── pages/
-│   └── ide.tsx            # Main IDE layout
-└── App.tsx                # App entry with routing
+│   └── ide.tsx              # Main IDE layout
+└── App.tsx                  # App entry with routing
 ```
 
 ### Backend (Express + TypeScript)
@@ -144,3 +147,6 @@ The app serves on port 5000 with both frontend and backend.
 - 2026-01-29: Phase B - Added Settings modal with 5 tabs (General, Editor, AI, Integrations, Security), persisted to .simpleide/settings.json
 - 2026-01-29: Phase C1 - Added encrypted secrets vault with AES-256-GCM encryption, master password unlock, and CRUD operations
 - 2026-01-29: Phase C2 - Added Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
+- 2026-01-29: Security hardening - File permissions (0600), redactSecrets() log scrubber, vault auto-lock (15 min default), LOCAL_INSTALL.md
+- 2026-01-29: Workspace Header - Added Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer tabs
+- 2026-01-29: Terminal improvements - 3 states (expanded/collapsed/hidden), draggable resize, Ctrl+J and Ctrl+` shortcuts, localStorage persistence
