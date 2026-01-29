@@ -808,15 +808,17 @@ export default function IDEPage() {
           {/* Editor + Terminal Panel */}
           <ResizablePanel defaultSize={55}>
             <div className="h-full flex flex-col">
-              {/* Workspace Header Tabs + Status Chips */}
-              <div className="flex items-center justify-between bg-muted/30 border-b border-border shrink-0">
+              {/* Global Status Header */}
+              <div className="flex items-center justify-end h-8 bg-background border-b border-border px-2 shrink-0">
+                <HeaderStatus onNavigate={handleTabChange} />
+              </div>
+              
+              {/* Workspace Tabs */}
+              <div className="bg-muted/30 border-b border-border shrink-0">
                 <WorkspaceHeader
                   activeTab={activeTab}
                   onTabChange={handleTabChange}
                 />
-                <div className="pr-2">
-                  <HeaderStatus onNavigate={handleTabChange} />
-                </div>
               </div>
               
               {/* File Tabs Bar - shown only when Editor tab is active */}
