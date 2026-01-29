@@ -9,7 +9,8 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
 - **Settings System**: Persistent settings in .simpleide/settings.json with 2 tabs (General, Editor)
-- **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection
+- **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection and vault reset capability
+- **Custom API Services**: Store any user-defined API services (OpenAI, Anthropic, etc.) with custom names and endpoints
 - **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
 - **AI Agents Panel**: Configure multiple LLM backends and assign roles (Planner, Coder, Reviewer, TestFixer, Doc) with per-role model settings
@@ -189,3 +190,4 @@ The app serves on port 5000 with both frontend and backend.
 - 2026-01-29: AI Agents - Added AI Agents tab with multi-backend management, role configuration (Planner/Coder/Reviewer/TestFixer/Doc), orchestrator with fallback routing, vault-stored credentials
 - 2026-01-29: Consolidated AI configuration - Removed AI tab from Settings modal, all AI backend config now in AI Agents panel
 - 2026-01-29: Streamlined UI - Moved Secrets/Vault and API Integrations to dedicated Secrets workspace tab, Settings modal now only has General and Editor tabs (2 tabs)
+- 2026-01-29: Vault reset and custom APIs - Added vault reset button with confirmation dialog, added Custom tab for user-defined API services with name/key/endpoint storage
