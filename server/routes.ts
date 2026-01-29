@@ -804,5 +804,236 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // AI Agents API
+  // ============================================
+
+  // Test backend connection and get available models
+  app.post("/api/ai-agents/test-backend", async (req: Request, res: Response) => {
+    const { backendId } = req.body;
+    
+    if (!backendId) {
+      return res.status(400).json({ error: "backendId is required" });
+    }
+    
+    try {
+      const settings = readSettings();
+      const backend = settings.aiAgents?.backends?.find((b: any) => b.id === backendId);
+      
+      if (!backend) {
+        return res.status(404).json({ error: "Backend not found" });
+      }
+      
+      // Build authorization headers
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      
+      if (backend.authType !== "none" && currentVault) {
+        if (backend.authType === "basic") {
+          const username = currentVault.secrets[`BACKEND_${backendId}_USERNAME`];
+          const password = currentVault.secrets[`BACKEND_${backendId}_PASSWORD`];
+          if (username && password) {
+            const auth = Buffer.from(`${username}:${password}`).toString("base64");
+            headers["Authorization"] = `Basic ${auth}`;
+          }
+        } else if (backend.authType === "bearer") {
+          const token = currentVault.secrets[`BACKEND_${backendId}_TOKEN`];
+          if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+          }
+        }
+      }
+      
+      // Try to get models from Ollama-compatible API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      let response: globalThis.Response;
+      try {
+        response = await fetch(`${backend.baseUrl}/api/tags`, {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        const models = data.models?.map((m: any) => m.name || m.model) || [];
+        res.json({ success: true, models });
+      } else {
+        const errorText = await response.text();
+        res.status(response.status).json({
+          success: false,
+          error: `Backend returned ${response.status}: ${errorText.substring(0, 200)}`,
+        });
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        res.status(504).json({ success: false, error: "Connection timed out" });
+      } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+        res.status(503).json({ success: false, error: `Cannot connect to backend: ${error.message}` });
+      } else {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    }
+  });
+
+  // Get secret value for backend (internal use by orchestrator)
+  const getBackendCredentials = (backendId: string, authType: string): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    
+    if (authType !== "none" && currentVault) {
+      if (authType === "basic") {
+        const username = currentVault.secrets[`BACKEND_${backendId}_USERNAME`];
+        const password = currentVault.secrets[`BACKEND_${backendId}_PASSWORD`];
+        if (username && password) {
+          const auth = Buffer.from(`${username}:${password}`).toString("base64");
+          headers["Authorization"] = `Basic ${auth}`;
+        }
+      } else if (authType === "bearer") {
+        const token = currentVault.secrets[`BACKEND_${backendId}_TOKEN`];
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+      }
+    }
+    
+    return headers;
+  };
+
+  // Orchestrator endpoint - makes LLM call with role-based routing
+  app.post("/api/ai-agents/chat", async (req: Request, res: Response) => {
+    const { role, messages, options } = req.body;
+    
+    if (!role || !messages) {
+      return res.status(400).json({ error: "role and messages are required" });
+    }
+    
+    try {
+      const settings = readSettings();
+      const aiAgents = settings.aiAgents || { backends: [], roles: {} };
+      const backends = aiAgents.backends || [];
+      
+      if (backends.length === 0) {
+        return res.status(400).json({ error: "No backends configured" });
+      }
+      
+      // Get role config or use defaults
+      const roleConfig = aiAgents.roles?.[role as keyof typeof aiAgents.roles];
+      const defaultBackendId = aiAgents.defaultBackendId || backends[0]?.id;
+      
+      const backendId = roleConfig?.backendId || defaultBackendId;
+      const model = roleConfig?.model || "codellama";
+      const temperature = roleConfig?.temperature ?? options?.temperature ?? 0.7;
+      const numCtx = roleConfig?.numCtx ?? options?.num_ctx ?? 4096;
+      
+      // Find backend
+      let backend = backends.find((b: any) => b.id === backendId);
+      
+      // Fallback to default backend if specified backend not found
+      if (!backend && defaultBackendId) {
+        backend = backends.find((b: any) => b.id === defaultBackendId);
+      }
+      
+      // Fallback to first backend
+      if (!backend) {
+        backend = backends[0];
+      }
+      
+      if (!backend) {
+        return res.status(400).json({ error: "No valid backend found" });
+      }
+      
+      // Build request
+      const authHeaders = getBackendCredentials(backend.id, backend.authType);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      };
+      
+      const payload = {
+        model,
+        messages,
+        stream: false,
+        options: {
+          temperature,
+          num_ctx: numCtx,
+        },
+      };
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+      
+      let response: globalThis.Response;
+      try {
+        response = await fetch(`${backend.baseUrl}/api/chat`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } catch (primaryError: any) {
+        // Try fallback to default backend
+        if (backend.id !== defaultBackendId && defaultBackendId) {
+          const fallbackBackend = backends.find((b: any) => b.id === defaultBackendId);
+          if (fallbackBackend) {
+            const fallbackHeaders = {
+              "Content-Type": "application/json",
+              ...getBackendCredentials(fallbackBackend.id, fallbackBackend.authType),
+            };
+            
+            try {
+              response = await fetch(`${fallbackBackend.baseUrl}/api/chat`, {
+                method: "POST",
+                headers: fallbackHeaders,
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+              });
+            } catch (fallbackError) {
+              clearTimeout(timeoutId);
+              throw primaryError;
+            }
+          } else {
+            clearTimeout(timeoutId);
+            throw primaryError;
+          }
+        } else {
+          clearTimeout(timeoutId);
+          throw primaryError;
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      
+      if (response!.ok) {
+        const data = await response!.json();
+        res.json({
+          success: true,
+          message: data.message,
+          model: data.model,
+          backend: backend.name,
+        });
+      } else {
+        const errorText = await response!.text();
+        res.status(response!.status).json({
+          success: false,
+          error: `LLM call failed: ${errorText.substring(0, 500)}`,
+        });
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        res.status(504).json({ success: false, error: "Request timed out" });
+      } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+        res.status(503).json({ success: false, error: `Cannot connect to backend: ${error.message}` });
+      } else {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    }
+  });
+
   return httpServer;
 }

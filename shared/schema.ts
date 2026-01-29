@@ -104,11 +104,45 @@ export const integrationSettingsSchema = z.object({
   }).default({}),
 });
 
+// AI Agents types
+export const authTypeSchema = z.enum(["none", "basic", "bearer"]);
+export type AuthType = z.infer<typeof authTypeSchema>;
+
+export const backendConfigSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  baseUrl: z.string().url(),
+  authType: authTypeSchema.default("none"),
+});
+
+export type BackendConfig = z.infer<typeof backendConfigSchema>;
+
+export const agentRoleSchema = z.enum(["Planner", "Coder", "Reviewer", "TestFixer", "Doc"]);
+export type AgentRole = z.infer<typeof agentRoleSchema>;
+
+export const roleConfigSchema = z.object({
+  backendId: z.string(),
+  model: z.string(),
+  temperature: z.number().min(0).max(2).default(0.7),
+  numCtx: z.number().min(512).max(131072).default(4096),
+});
+
+export type RoleConfig = z.infer<typeof roleConfigSchema>;
+
+export const aiAgentsSettingsSchema = z.object({
+  backends: z.array(backendConfigSchema).default([]),
+  defaultBackendId: z.string().optional(),
+  roles: z.record(agentRoleSchema, roleConfigSchema).default({}),
+});
+
+export type AIAgentsSettings = z.infer<typeof aiAgentsSettingsSchema>;
+
 export const settingsSchema = z.object({
   general: generalSettingsSchema.default({}),
   editor: editorSettingsSchema.default({}),
   ai: aiSettingsSchema.default({}),
   integrations: integrationSettingsSchema.default({}),
+  aiAgents: aiAgentsSettingsSchema.default({}),
 });
 
 export type EditorSettings = z.infer<typeof editorSettingsSchema>;
