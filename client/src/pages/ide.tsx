@@ -6,6 +6,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
+import { HeaderStatus } from "@/components/HeaderStatus";
 import { FileTabsBar } from "@/components/FileTabsBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useTheme } from "@/components/ThemeProvider";
@@ -807,11 +808,16 @@ export default function IDEPage() {
           {/* Editor + Terminal Panel */}
           <ResizablePanel defaultSize={55}>
             <div className="h-full flex flex-col">
-              {/* Workspace Header Tabs */}
-              <WorkspaceHeader
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-              />
+              {/* Workspace Header Tabs + Status Chips */}
+              <div className="flex items-center justify-between bg-muted/30 border-b border-border shrink-0">
+                <WorkspaceHeader
+                  activeTab={activeTab}
+                  onTabChange={handleTabChange}
+                />
+                <div className="pr-2">
+                  <HeaderStatus onNavigate={handleTabChange} />
+                </div>
+              </div>
               
               {/* File Tabs Bar - shown only when Editor tab is active */}
               {activeTab === "editor" && (

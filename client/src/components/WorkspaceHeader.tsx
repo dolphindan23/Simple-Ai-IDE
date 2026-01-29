@@ -28,7 +28,7 @@ interface WorkspaceHeaderProps {
 
 export function WorkspaceHeader({ activeTab, onTabChange }: WorkspaceHeaderProps) {
   return (
-    <div className="flex items-center h-9 bg-muted/30 border-b border-border px-1 gap-0.5 shrink-0">
+    <div className="flex items-center h-9 px-1 gap-0.5 shrink-0">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;
