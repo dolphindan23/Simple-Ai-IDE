@@ -34,7 +34,7 @@ export default function IDEPage() {
   const [fileContent, setFileContent] = useState<string>("");
   const [originalContent, setOriginalContent] = useState<string>("");
   const [isDirty, setIsDirty] = useState(false);
-  const [goal, setGoal] = useState<string>("Add a /health endpoint and tests");
+  const [goal, setGoal] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
