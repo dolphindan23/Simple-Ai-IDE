@@ -1009,6 +1009,241 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Model Catalog API - Dynamic model discovery
+  // ============================================
+  
+  const MODEL_CATALOG_FILE = path.join(SETTINGS_DIR, "model_catalog.json");
+  
+  // Model type heuristics based on name patterns
+  function inferModelType(modelName: string): "code" | "general" | "vision" | "embed" | "unknown" {
+    const name = modelName.toLowerCase();
+    if (name.includes("embed") || name.includes("embedding")) return "embed";
+    if (name.includes("vision") || name.includes("llava") || name.includes("bakllava")) return "vision";
+    if (name.includes("code") || name.includes("coder") || name.includes("starcoder") || name.includes("deepseek-coder") || name.includes("codellama") || name.includes("qwen2.5-coder")) return "code";
+    return "general";
+  }
+  
+  // Size class heuristics based on name patterns
+  function inferSizeClass(modelName: string): "small" | "medium" | "large" | "xlarge" | "unknown" {
+    const name = modelName.toLowerCase();
+    // Look for parameter counts
+    if (name.includes("0.5b") || name.includes("1b") || name.includes("1.3b") || name.includes("2b") || name.includes("3b")) return "small";
+    if (name.includes("7b") || name.includes("8b") || name.includes("6b")) return "medium";
+    if (name.includes("13b") || name.includes("14b") || name.includes("20b") || name.includes("27b") || name.includes("32b") || name.includes("34b")) return "large";
+    if (name.includes("70b") || name.includes("72b") || name.includes("100b") || name.includes("180b") || name.includes("405b")) return "xlarge";
+    return "unknown";
+  }
+  
+  // Speed/quality inference based on size
+  function inferSpeedQuality(sizeClass: string): "fast" | "balanced" | "accurate" {
+    if (sizeClass === "small") return "fast";
+    if (sizeClass === "medium") return "balanced";
+    if (sizeClass === "large" || sizeClass === "xlarge") return "accurate";
+    return "balanced";
+  }
+  
+  interface ModelCatalogEntry {
+    type?: "code" | "general" | "vision" | "embed";
+    preference?: "fast" | "balanced" | "accurate";
+    defaultNumCtx?: number;
+    notes?: string;
+  }
+  
+  interface ModelCatalog {
+    models: Record<string, ModelCatalogEntry>;
+    updatedAt?: string;
+  }
+  
+  function readModelCatalog(): ModelCatalog {
+    try {
+      if (fs.existsSync(MODEL_CATALOG_FILE)) {
+        const data = fs.readFileSync(MODEL_CATALOG_FILE, "utf-8");
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      console.error("Error reading model catalog:", error);
+    }
+    return { models: {} };
+  }
+  
+  function writeModelCatalog(catalog: ModelCatalog): void {
+    if (!fs.existsSync(SETTINGS_DIR)) {
+      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    }
+    catalog.updatedAt = new Date().toISOString();
+    fs.writeFileSync(MODEL_CATALOG_FILE, JSON.stringify(catalog, null, 2));
+  }
+  
+  // Get all models from all configured backends with metadata
+  app.get("/api/ai/models", async (req: Request, res: Response) => {
+    try {
+      const settings = readSettings();
+      const backends = settings.aiAgents?.backends || [];
+      const catalog = readModelCatalog();
+      
+      const results: Array<{
+        backendId: string;
+        backendName: string;
+        backendUrl: string;
+        online: boolean;
+        models: Array<{
+          name: string;
+          size?: number;
+          modifiedAt?: string;
+          details?: any;
+          inferred: {
+            type: string;
+            sizeClass: string;
+            preference: string;
+          };
+          userTags?: ModelCatalogEntry;
+        }>;
+        error?: string;
+      }> = [];
+      
+      // Query each backend in parallel
+      const promises = backends.map(async (backend: any) => {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        
+        // Add auth headers if needed
+        if (backend.authType !== "none" && currentVault) {
+          if (backend.authType === "basic") {
+            const username = currentVault.secrets[`BACKEND_${backend.id}_USERNAME`];
+            const password = currentVault.secrets[`BACKEND_${backend.id}_PASSWORD`];
+            if (username && password) {
+              const auth = Buffer.from(`${username}:${password}`).toString("base64");
+              headers["Authorization"] = `Basic ${auth}`;
+            }
+          } else if (backend.authType === "bearer") {
+            const token = currentVault.secrets[`BACKEND_${backend.id}_TOKEN`];
+            if (token) {
+              headers["Authorization"] = `Bearer ${token}`;
+            }
+          }
+        }
+        
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          
+          const response = await fetch(`${backend.baseUrl}/api/tags`, {
+            method: "GET",
+            headers,
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.json();
+            const models = (data.models || []).map((m: any) => {
+              const modelName = m.name || m.model || "";
+              const inferredType = inferModelType(modelName);
+              const inferredSize = inferSizeClass(modelName);
+              const inferredPreference = inferSpeedQuality(inferredSize);
+              
+              return {
+                name: modelName,
+                size: m.size,
+                modifiedAt: m.modified_at,
+                details: m.details,
+                inferred: {
+                  type: inferredType,
+                  sizeClass: inferredSize,
+                  preference: inferredPreference,
+                },
+                userTags: catalog.models[modelName] || undefined,
+              };
+            });
+            
+            return {
+              backendId: backend.id,
+              backendName: backend.name,
+              backendUrl: backend.baseUrl,
+              online: true,
+              models,
+            };
+          } else {
+            return {
+              backendId: backend.id,
+              backendName: backend.name,
+              backendUrl: backend.baseUrl,
+              online: false,
+              models: [],
+              error: `HTTP ${response.status}`,
+            };
+          }
+        } catch (error: any) {
+          return {
+            backendId: backend.id,
+            backendName: backend.name,
+            backendUrl: backend.baseUrl,
+            online: false,
+            models: [],
+            error: error.name === "AbortError" ? "Timeout" : error.message,
+          };
+        }
+      });
+      
+      const backendResults = await Promise.all(promises);
+      res.json({ backends: backendResults, catalog });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get user model catalog/tags
+  app.get("/api/ai/model-catalog", (req: Request, res: Response) => {
+    try {
+      const catalog = readModelCatalog();
+      res.json(catalog);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update model tags
+  app.put("/api/ai/model-catalog", (req: Request, res: Response) => {
+    try {
+      const { models } = req.body;
+      if (!models || typeof models !== "object") {
+        return res.status(400).json({ error: "models object is required" });
+      }
+      
+      const catalog: ModelCatalog = { models };
+      writeModelCatalog(catalog);
+      res.json({ success: true, catalog });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update single model tags
+  app.put("/api/ai/model-catalog/:modelName", (req: Request, res: Response) => {
+    try {
+      const modelName = decodeURIComponent(req.params.modelName);
+      const tags = req.body;
+      
+      const catalog = readModelCatalog();
+      
+      if (Object.keys(tags).length === 0) {
+        delete catalog.models[modelName];
+      } else {
+        catalog.models[modelName] = {
+          ...catalog.models[modelName],
+          ...tags,
+        };
+      }
+      
+      writeModelCatalog(catalog);
+      res.json({ success: true, model: modelName, tags: catalog.models[modelName] });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get secret value for backend (internal use by orchestrator)
   const getBackendCredentials = (backendId: string, authType: string): Record<string, string> => {
     const headers: Record<string, string> = {};

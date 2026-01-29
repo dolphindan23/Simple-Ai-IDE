@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   Server, Plus, Trash2, Edit2, Check, X, Loader2, 
-  CheckCircle, XCircle, Bot, Cpu, Thermometer, Hash
+  CheckCircle, XCircle, Bot, Cpu, Thermometer, Hash, BookOpen
 } from "lucide-react";
 import type { 
   Settings as SettingsType, 
@@ -21,6 +21,7 @@ import type {
   AgentRole, 
   RoleConfig 
 } from "@shared/schema";
+import { ModelCatalog } from "./ModelCatalog";
 
 const AGENT_ROLES: AgentRole[] = ["Planner", "Coder", "Reviewer", "TestFixer", "Doc"];
 
@@ -294,6 +295,10 @@ export function AIAgentsPanel() {
           <TabsTrigger value="backends" data-testid="tab-backends">
             <Server className="w-4 h-4 mr-2" />
             Backends
+          </TabsTrigger>
+          <TabsTrigger value="catalog" data-testid="tab-catalog">
+            <BookOpen className="w-4 h-4 mr-2" />
+            Model Catalog
           </TabsTrigger>
           <TabsTrigger value="roles" data-testid="tab-roles">
             <Bot className="w-4 h-4 mr-2" />
@@ -618,6 +623,10 @@ export function AIAgentsPanel() {
               </Card>
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="catalog" className="space-y-4">
+          <ModelCatalog />
         </TabsContent>
 
         <TabsContent value="roles" className="space-y-4">
