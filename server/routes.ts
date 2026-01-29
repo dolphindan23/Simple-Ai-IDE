@@ -5,7 +5,7 @@ import { runTask, applyTaskDiff } from "./taskRunner";
 import { createTaskSchema, settingsSchema, defaultSettings, type Settings } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
-import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret } from "./secrets";
+import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleide");
@@ -621,6 +621,21 @@ export async function registerRoutes(
   app.post("/api/secrets/lock", (req: Request, res: Response) => {
     lockVaultNow();
     res.json({ success: true, message: "Vault locked" });
+  });
+
+  // Delete/reset vault
+  app.delete("/api/secrets/vault", (req: Request, res: Response) => {
+    try {
+      lockVaultNow();
+      const deleted = deleteVault();
+      if (deleted) {
+        res.json({ success: true, message: "Vault deleted. You can create a new one with your own password." });
+      } else {
+        res.json({ success: true, message: "No vault exists to delete." });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // List secrets (masked values)

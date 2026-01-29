@@ -52,6 +52,14 @@ export function vaultExists(): boolean {
   return fs.existsSync(SECRETS_FILE);
 }
 
+export function deleteVault(): boolean {
+  if (fs.existsSync(SECRETS_FILE)) {
+    fs.unlinkSync(SECRETS_FILE);
+    return true;
+  }
+  return false;
+}
+
 export function createVault(masterPassword: string): void {
   if (!fs.existsSync(SECRETS_DIR)) {
     fs.mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });

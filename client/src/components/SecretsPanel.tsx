@@ -8,7 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key, Loader2, CheckCircle, XCircle, Zap, Puzzle } from "lucide-react";
+import { Shield, Lock, Unlock, Plus, Trash2, Eye, EyeOff, Key, Loader2, CheckCircle, XCircle, Zap, Puzzle, RotateCcw, Globe } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { Settings as SettingsType } from "@shared/schema";
 
 interface VaultStatus {
@@ -38,6 +39,18 @@ export function SecretsPanel() {
   // Integration test state
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
+  
+  // Custom API state
+  const [newApiName, setNewApiName] = useState("");
+  const [newApiSecretKey, setNewApiSecretKey] = useState("");
+  const [newApiEndpoint, setNewApiEndpoint] = useState("");
+  
+  // Custom APIs stored in secrets with prefix CUSTOM_API_
+  const customApis = secrets.filter(s => s.key.startsWith("CUSTOM_API_")).map(s => ({
+    name: s.key.replace("CUSTOM_API_", "").replace("_KEY", "").replace("_ENDPOINT", ""),
+    key: s.key,
+    maskedValue: s.maskedValue
+  }));
 
   const { data: savedSettings } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
@@ -115,6 +128,46 @@ export function SecretsPanel() {
       setVaultStatus({ ...vaultStatus, unlocked: false });
       setSecrets([]);
       toast({ title: "Vault locked" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleResetVault = async () => {
+    try {
+      const res = await apiRequest("DELETE", "/api/secrets/vault", {});
+      if (res.ok) {
+        toast({ title: "Vault reset", description: "You can now create a new vault with your own password." });
+        setVaultStatus({ exists: false, unlocked: false });
+        setSecrets([]);
+        setMasterPassword("");
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleAddCustomApi = async () => {
+    if (!newApiName.trim() || !newApiSecretKey.trim()) {
+      toast({ title: "Error", description: "Name and API key are required", variant: "destructive" });
+      return;
+    }
+    try {
+      // Store the API key
+      const keyName = `CUSTOM_API_${newApiName.toUpperCase().replace(/\s+/g, "_")}_KEY`;
+      await apiRequest("PUT", `/api/secrets/${encodeURIComponent(keyName)}`, { value: newApiSecretKey });
+      
+      // Optionally store endpoint if provided
+      if (newApiEndpoint.trim()) {
+        const endpointName = `CUSTOM_API_${newApiName.toUpperCase().replace(/\s+/g, "_")}_ENDPOINT`;
+        await apiRequest("PUT", `/api/secrets/${encodeURIComponent(endpointName)}`, { value: newApiEndpoint });
+      }
+      
+      toast({ title: "API added", description: `Custom API '${newApiName}' has been saved.` });
+      setNewApiName("");
+      setNewApiSecretKey("");
+      setNewApiEndpoint("");
+      await fetchSecrets();
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -215,7 +268,7 @@ export function SecretsPanel() {
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           <Tabs defaultValue="vault" className="w-full">
-            <TabsList className="grid w-full grid-cols-2" data-testid="secrets-tabs">
+            <TabsList className="grid w-full grid-cols-3" data-testid="secrets-tabs">
               <TabsTrigger value="vault" className="flex items-center gap-1" data-testid="tab-vault">
                 <Shield className="w-4 h-4" />
                 Vault
@@ -223,6 +276,10 @@ export function SecretsPanel() {
               <TabsTrigger value="integrations" className="flex items-center gap-1" data-testid="tab-integrations">
                 <Puzzle className="w-4 h-4" />
                 APIs
+              </TabsTrigger>
+              <TabsTrigger value="custom" className="flex items-center gap-1" data-testid="tab-custom">
+                <Globe className="w-4 h-4" />
+                Custom
               </TabsTrigger>
             </TabsList>
 
@@ -270,10 +327,37 @@ export function SecretsPanel() {
                       data-testid="input-unlock-password"
                     />
                   </div>
-                  <Button onClick={handleUnlockVault} data-testid="button-unlock-vault">
-                    <Unlock className="w-4 h-4 mr-2" />
-                    Unlock Vault
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={handleUnlockVault} data-testid="button-unlock-vault">
+                      <Unlock className="w-4 h-4 mr-2" />
+                      Unlock Vault
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" data-testid="button-reset-vault">
+                          <RotateCcw className="w-4 h-4 mr-1" />
+                          Reset
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Reset Vault?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete the vault and all stored secrets. You'll be able to create a new vault with your own password.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleResetVault} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Reset Vault
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Forgot password? Use Reset to start fresh with a new password.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -539,6 +623,97 @@ export function SecretsPanel() {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="custom" className="space-y-4 mt-4" data-testid="panel-custom">
+              {!vaultStatus.unlocked ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <Lock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Unlock the vault to manage custom APIs</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 border rounded-md space-y-3">
+                    <Label className="text-sm font-medium">Add Custom API</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Store any API key or service credentials securely.
+                    </p>
+                    <div className="space-y-2">
+                      <Input
+                        value={newApiName}
+                        onChange={(e) => setNewApiName(e.target.value)}
+                        placeholder="Service name (e.g. OpenAI, Anthropic)"
+                        data-testid="input-custom-api-name"
+                      />
+                      <div className="relative">
+                        <Input
+                          type={showNewSecretValue ? "text" : "password"}
+                          value={newApiSecretKey}
+                          onChange={(e) => setNewApiSecretKey(e.target.value)}
+                          placeholder="API Key"
+                          data-testid="input-custom-api-key"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full"
+                          onClick={() => setShowNewSecretValue(!showNewSecretValue)}
+                        >
+                          {showNewSecretValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                      <Input
+                        value={newApiEndpoint}
+                        onChange={(e) => setNewApiEndpoint(e.target.value)}
+                        placeholder="API Endpoint (optional)"
+                        data-testid="input-custom-api-endpoint"
+                      />
+                    </div>
+                    <Button size="sm" onClick={handleAddCustomApi} data-testid="button-add-custom-api">
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add API
+                    </Button>
+                  </div>
+
+                  {customApis.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Your Custom APIs</Label>
+                      <div className="space-y-1">
+                        {customApis.map((api) => (
+                          <div
+                            key={api.key}
+                            className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm"
+                            data-testid={`custom-api-${api.name}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Globe className="w-3 h-3 text-muted-foreground" />
+                              <span className="font-medium text-xs">{api.name}</span>
+                              <span className="text-muted-foreground text-xs">({api.maskedValue})</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleDeleteSecret(api.key)}
+                              data-testid={`button-delete-${api.name}`}
+                            >
+                              <Trash2 className="w-3 h-3 text-destructive" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-muted/30 rounded-md">
+                    <p className="text-xs text-muted-foreground">
+                      Custom APIs are stored as secrets with the prefix CUSTOM_API_. 
+                      Access them in your code using the secret key name.
+                    </p>
                   </div>
                 </div>
               )}
