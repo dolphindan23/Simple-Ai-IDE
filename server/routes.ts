@@ -558,11 +558,29 @@ export async function registerRoutes(
     });
   });
 
+  // ==================== ENVIRONMENT HELPERS ====================
+  // Determine effective environment: SIMPLEAIDE_ENV overrides NODE_ENV
+  function getEffectiveEnv(): "DEV" | "PROD" {
+    if (process.env.SIMPLEAIDE_ENV === "prod" || process.env.SIMPLEAIDE_ENV === "production") {
+      return "PROD";
+    }
+    if (process.env.NODE_ENV === "production") {
+      return "PROD";
+    }
+    return "DEV";
+  }
+
+  function isProdEnv(): boolean {
+    return getEffectiveEnv() === "PROD";
+  }
+
   // ==================== GLOBAL STATUS ENDPOINT ====================
   app.get("/api/status", async (req: Request, res: Response) => {
     try {
-      // Environment (DEV for now, PROD support coming)
-      const env = process.env.SIMPLEAIDE_ENV === "prod" ? "PROD" : "DEV";
+      // Environment with both values for debugging
+      const effectiveEnv = getEffectiveEnv();
+      const nodeEnv = process.env.NODE_ENV || "development";
+      const simpleaideEnv = process.env.SIMPLEAIDE_ENV || null;
       
       // Runs status
       const activeRunCount = await runsStorage.getActiveRunCount();
@@ -624,7 +642,12 @@ export async function registerRoutes(
       };
       
       res.json({
-        env,
+        env: effectiveEnv,
+        envDetails: {
+          effective: effectiveEnv,
+          nodeEnv,
+          simpleaideEnv,
+        },
         server: serverInfo,
         runs: {
           active: activeRunCount,
@@ -1485,6 +1508,14 @@ export async function registerRoutes(
   // Create a new SQLite database
   app.post("/api/db/create", (req: Request, res: Response) => {
     try {
+      // PROD read-only enforcement
+      if (isProdEnv()) {
+        return res.status(403).json({ 
+          error: "Database creation is disabled in production mode",
+          code: "PROD_READ_ONLY"
+        });
+      }
+      
       const { name } = req.body;
       if (!name) {
         return res.status(400).json({ error: "Database name is required" });
@@ -1549,9 +1580,12 @@ export async function registerRoutes(
   // Insert a row
   app.post("/api/db/:env/rows/:table", (req: Request, res: Response) => {
     try {
-      const env = req.params.env;
-      if (env === "prod") {
-        return res.status(403).json({ error: "Production database is read-only" });
+      // PROD read-only enforcement (check both URL param and server env)
+      if (req.params.env === "prod" || isProdEnv()) {
+        return res.status(403).json({ 
+          error: "Database writes are disabled in production mode",
+          code: "PROD_READ_ONLY"
+        });
       }
       
       const dbPath = req.query.path as string;
@@ -1572,9 +1606,12 @@ export async function registerRoutes(
   // Update a row
   app.put("/api/db/:env/rows/:table/:pk", (req: Request, res: Response) => {
     try {
-      const env = req.params.env;
-      if (env === "prod") {
-        return res.status(403).json({ error: "Production database is read-only" });
+      // PROD read-only enforcement (check both URL param and server env)
+      if (req.params.env === "prod" || isProdEnv()) {
+        return res.status(403).json({ 
+          error: "Database writes are disabled in production mode",
+          code: "PROD_READ_ONLY"
+        });
       }
       
       const dbPath = req.query.path as string;
@@ -1597,9 +1634,12 @@ export async function registerRoutes(
   // Delete a row
   app.delete("/api/db/:env/rows/:table/:pk", (req: Request, res: Response) => {
     try {
-      const env = req.params.env;
-      if (env === "prod") {
-        return res.status(403).json({ error: "Production database is read-only" });
+      // PROD read-only enforcement (check both URL param and server env)
+      if (req.params.env === "prod" || isProdEnv()) {
+        return res.status(403).json({ 
+          error: "Database writes are disabled in production mode",
+          code: "PROD_READ_ONLY"
+        });
       }
       
       const dbPath = req.query.path as string;
@@ -1621,7 +1661,6 @@ export async function registerRoutes(
   // Execute raw SQL query
   app.post("/api/db/:env/query", (req: Request, res: Response) => {
     try {
-      const env = req.params.env;
       const dbPath = req.query.path as string;
       const { sql } = req.body;
       
@@ -1633,11 +1672,19 @@ export async function registerRoutes(
         return res.status(400).json({ error: "SQL query is required" });
       }
       
-      // In production, only allow SELECT queries
-      if (env === "prod") {
+      // PROD read-only enforcement: only allow SELECT/PRAGMA/EXPLAIN
+      if (req.params.env === "prod" || isProdEnv()) {
         const trimmedSql = sql.trim().toLowerCase();
-        if (!trimmedSql.startsWith("select") && !trimmedSql.startsWith("pragma") && !trimmedSql.startsWith("explain")) {
-          return res.status(403).json({ error: "Only SELECT queries allowed in production" });
+        // Block INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, etc.
+        const writeKeywords = ["insert", "update", "delete", "drop", "create", "alter", "truncate", "replace", "merge"];
+        const isWriteQuery = writeKeywords.some(kw => trimmedSql.startsWith(kw));
+        const isAllowed = trimmedSql.startsWith("select") || trimmedSql.startsWith("pragma") || trimmedSql.startsWith("explain");
+        
+        if (isWriteQuery || !isAllowed) {
+          return res.status(403).json({ 
+            error: "Only SELECT, PRAGMA, and EXPLAIN queries are allowed in production mode",
+            code: "PROD_READ_ONLY"
+          });
         }
       }
       

@@ -16,6 +16,11 @@ import type { WorkspaceTab } from "./WorkspaceHeader";
 
 interface StatusResponse {
   env: "DEV" | "PROD";
+  envDetails: {
+    effective: "DEV" | "PROD";
+    nodeEnv: string;
+    simpleaideEnv: string | null;
+  };
   server: {
     port: number | string;
     nodeEnv: string;
@@ -195,7 +200,7 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
         label={status.env}
         status={status.env === "PROD" ? "warning" : "neutral"}
         icon={Server}
-        tooltip={`Environment: ${status.env}. Server up ${formatUptime(status.server.uptime)}.`}
+        tooltip={`Environment: ${status.env}${status.envDetails?.simpleaideEnv ? ` (SIMPLEAIDE_ENV=${status.envDetails.simpleaideEnv})` : ''} | NODE_ENV=${status.envDetails?.nodeEnv || 'development'}. Up ${formatUptime(status.server.uptime)}.`}
       />
 
       <StatusChip

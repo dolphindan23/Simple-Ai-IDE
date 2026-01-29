@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Database, Table, Search, Plus, Trash2, Save, RefreshCw, Play, Link2, ChevronDown } from "lucide-react";
+import { Database, Table, Search, Plus, Trash2, Save, RefreshCw, Play, Link2, ChevronDown, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,6 +41,10 @@ interface QueryResult {
   affectedRows?: number;
 }
 
+interface StatusResponse {
+  env: "DEV" | "PROD";
+}
+
 export function DatabasePanel() {
   const { toast } = useToast();
   const [selectedDb, setSelectedDb] = useState<DatabaseInfo | null>(null);
@@ -54,7 +58,14 @@ export function DatabasePanel() {
   const [createDbDialog, setCreateDbDialog] = useState(false);
   const [newDbName, setNewDbName] = useState("");
 
-  const env = "dev";
+  // Fetch current environment from status
+  const { data: statusData } = useQuery<StatusResponse>({
+    queryKey: ["/api/status"],
+    staleTime: 10000,
+  });
+  
+  const isProd = statusData?.env === "PROD";
+  const env = isProd ? "prod" : "dev";
 
   const { data: databases = [], refetch: refetchDatabases } = useQuery<DatabaseInfo[]>({
     queryKey: ["/api/db/list"],
@@ -285,19 +296,28 @@ export function DatabasePanel() {
                   </Badge>
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuItem onClick={() => setCreateDbDialog(true)} data-testid="menu-create-db">
-                <Plus className="h-4 w-4 mr-2" />
-                Create New Database
-              </DropdownMenuItem>
+              {!isProd && (
+                <DropdownMenuItem onClick={() => setCreateDbDialog(true)} data-testid="menu-create-db">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create New Database
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
           {/* Environment indicator */}
           <div className="flex items-center gap-2 text-xs">
             <span className="text-muted-foreground">Environment:</span>
-            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-              DEV
-            </Badge>
+            {isProd ? (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                <Lock className="h-2.5 w-2.5 mr-1" />
+                Read-only
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                DEV
+              </Badge>
+            )}
           </div>
 
           {/* Table Search */}
@@ -390,10 +410,16 @@ export function DatabasePanel() {
         {/* SQL Input (only in SQL view) */}
         {viewMode === "sql" && (
           <div className="px-4 py-2 border-b space-y-2">
+            {isProd && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-500/10 px-2 py-1.5 rounded-md border border-amber-500/20">
+                <Lock className="h-3 w-3" />
+                <span>Production mode: Only SELECT, PRAGMA, and EXPLAIN queries are allowed.</span>
+              </div>
+            )}
             <textarea
               value={sqlQuery}
               onChange={(e) => setSqlQuery(e.target.value)}
-              placeholder="SELECT * FROM table_name LIMIT 100;"
+              placeholder={isProd ? "SELECT * FROM table_name LIMIT 100;" : "SELECT * FROM table_name LIMIT 100; -- or INSERT/UPDATE/DELETE"}
               className="w-full h-20 p-2 text-sm font-mono bg-muted/50 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="textarea-sql"
             />
@@ -419,16 +445,18 @@ export function DatabasePanel() {
         {/* Grid View Actions */}
         {viewMode === "grid" && selectedTable && (
           <div className="flex items-center gap-2 px-4 py-2 border-b">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setNewRowDialog(true)}
-              data-testid="button-add-row"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Add Row
-            </Button>
-            {editedRows.size > 0 && (
+            {!isProd && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNewRowDialog(true)}
+                data-testid="button-add-row"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add Row
+              </Button>
+            )}
+            {!isProd && editedRows.size > 0 && (
               <Button
                 size="sm"
                 onClick={handleSaveChanges}
@@ -438,6 +466,12 @@ export function DatabasePanel() {
                 <Save className="h-3.5 w-3.5 mr-1.5" />
                 Save Changes ({editedRows.size})
               </Button>
+            )}
+            {isProd && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Lock className="h-3 w-3" />
+                <span>Read-only in production mode</span>
+              </div>
             )}
           </div>
         )}
@@ -485,7 +519,7 @@ export function DatabasePanel() {
                         </th>
                       );
                     })}
-                    {viewMode === "grid" && <th className="px-3 py-2 w-10 border-b" />}
+                    {viewMode === "grid" && !isProd && <th className="px-3 py-2 w-10 border-b" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -499,7 +533,8 @@ export function DatabasePanel() {
                           const value = editedRow ? editedRow[col] : row[col];
                           const displayValue = value === null ? "NULL" : String(value);
                           const colInfo = schema.find(c => c.name === col);
-                          const isEditable = viewMode === "grid" && !colInfo?.primaryKey;
+                          // Disable editing in PROD mode
+                          const isEditable = viewMode === "grid" && !colInfo?.primaryKey && !isProd;
                           const isEdited = editedRow && editedRow[col] !== row[col];
                           
                           return (
@@ -526,7 +561,7 @@ export function DatabasePanel() {
                             </td>
                           );
                         })}
-                        {viewMode === "grid" && (
+                        {viewMode === "grid" && !isProd && (
                           <td className="px-2 py-1">
                             <Button
                               variant="ghost"
