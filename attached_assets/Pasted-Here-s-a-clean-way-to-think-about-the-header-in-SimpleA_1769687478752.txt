@@ -1,0 +1,213 @@
+Here’s a clean way to think about the **header** in SimpleAide:
+
+> The header should show only **global “are we good?” signals** — things that affect *everything* — and it should do it with **tiny status chips + tooltips**, not menus.
+
+Below are **what to put there**, then a **checklist + action plan** to confirm what’s already implemented and what to build next.
+
+---
+
+# What to put in the header (high-signal, low-space)
+
+## 1) Global Environment Chip (DEV / PROD)
+
+**One pill** near the left or right:
+
+* `DEV 🟢` or `PROD 🔴`
+* Click opens a small popover:
+
+  * what’s locked in PROD (writes, shell, DB edits, network)
+  * “Unlock PROD (time-limited)” if you implement that
+
+This becomes the single most important safety control across SimpleAide.
+
+---
+
+## 2) Connections / Health Chips (tiny icons with hover tooltips)
+
+You don’t want full text like “Ollama connected”… you want a dot system.
+
+### A) LLM backends health
+
+Icon: 🧠 or plug icon
+
+* `🧠 2/2` (2 backends online out of 2 configured)
+* Tooltip shows list:
+
+  * Local A4500 ✅
+  * DGX Spark ❌ (timeout)
+
+### B) Server / Port status
+
+Icon: `:<>` or `●`
+
+* `API :5173 ✅` (or whatever port)
+* Tooltip:
+
+  * frontend URL
+  * backend URL
+  * websocket/SSE status
+
+### C) Database connection
+
+Icon: 🛢️
+
+* `DB DEV ✅` / `DB OFF`
+* Tooltip:
+
+  * provider (sqlite/postgres)
+  * active db name
+  * read-only status
+
+### D) Vault lock status (secrets)
+
+Icon: 🔒 / 🔓
+
+* `Vault 🔒`
+* Tooltip:
+
+  * locked/unlocked
+  * auto-lock timer countdown
+* Click opens unlock dialog (fast path)
+
+These 4 chips cover 95% of global issues users face.
+
+---
+
+## 3) Task/Run activity indicator (agent system)
+
+Icon: ▶️ / spinner
+
+* `Run: idle` or `Run: 1 active`
+* Click goes to Runs tab or opens last run timeline
+
+This gives “agentic” feedback without adding UI panels.
+
+---
+
+## 4) “Danger mode” indicator (optional, but valuable)
+
+Only appears when relevant:
+
+* `Write Enabled ⚠️` (when PROD is unlocked)
+* Or `Network ON` if you add network/tool permissions
+
+The key: it should only show when something risky is enabled.
+
+---
+
+# Suggested header layout (compact)
+
+Left side: app logo + title
+Center: workspace tabs (you already have)
+Right side: **chips** + icons
+
+Example right side:
+
+* `DEV 🟢` | `Vault 🔒` | `DB DEV ✅` | `🧠 2/2` | `API :3000 ✅` | `Run 1 ⏳`
+
+All with hover tooltips; clicking opens the relevant tab or popover.
+
+---
+
+# Checklist: what might already be implemented (based on your screenshots + prior summaries)
+
+### ✅ Already done (from your agent outputs)
+
+* AI Agents tab: backends + auth + model list test + role mapping
+* Secrets vault: AES-GCM + PBKDF2, CRUD, lock/unlock, auto-lock, file perms, log scrubbing
+* Workspace header tabs (Editor/Preview/Database/Secrets/Console/Shell/Developer/AI Agents/Runs)
+* Output panel exists with collapse/hide controls (looks present at bottom)
+* Fast/Accurate toggle in AI panel (visible)
+
+### Likely done (but verify)
+
+* Runs infrastructure (I see `server/runs.ts` in tree and “Runs” tab)
+* Basic API + SSE/log streaming (earlier it existed)
+
+### Probably not done yet (common next items)
+
+* **Global DEV/PROD profile** that affects all tools (not just DB)
+* **Header status chips** (health aggregation)
+* Shell tab backed by a real PTY (xterm.js + node-pty) rather than “fake logs”
+* Database tab as a “Sheets-like” grid (probably still basic/empty)
+* Guardrails / Project Bible enforcement (diff scanning)
+* Autonomous test/fix loop with sandbox/worktree promotion
+
+---
+
+# Action plan (what to do next in the cleanest order)
+
+## Phase 1 — Add header “Global Status” (fast, huge UX payoff)
+
+**Goal:** Make the app feel alive and trustworthy.
+
+1. Add a single backend endpoint:
+
+* `GET /api/status` returns:
+
+  * env: DEV/PROD
+  * server ports + urls
+  * vault: locked/unlocked + auto-lock remaining
+  * db: connected + type + readOnly
+  * llm backends: list with online/offline
+  * runs: active count
+
+2. Frontend:
+
+* Poll `/api/status` every 3–5s (or push via SSE later)
+* Render compact chips with tooltips
+
+**Definition of done:** you can glance and know what’s working.
+
+---
+
+## Phase 2 — Make Shell tab real (if not already)
+
+**Goal:** A true local terminal.
+
+* Frontend: xterm.js
+* Backend: node-pty + WebSocket bridge
+* Respect DEV/PROD:
+
+  * PROD locked: allow read-only commands or require unlock for destructive ones
+
+**Definition of done:** `ls`, `npm test`, `python -m pytest` run inside Shell tab.
+
+---
+
+## Phase 3 — Database tab “Grid-first”
+
+**Goal:** “Sheets for SQL” baseline.
+
+* DB selector supports SQLite and Postgres
+* Tables list + grid viewer
+* DEV editable, PROD read-only
+* SQL view toggles for power users
+
+**Definition of done:** click a table → see rows; edit in DEV.
+
+---
+
+## Phase 4 — Agent safety + agentic loop (highest “next-gen” payoff)
+
+**Goal:** Windsurf-like flow.
+
+* Sandbox worktree
+* Generate diff → apply to sandbox → run tests → fix loop (N retries)
+* Promote patch to main tree on pass
+
+**Definition of done:** “Implement (Auto)” returns passing change or a clear failure report.
+
+---
+
+# What to tell the agent (copy/paste)
+
+If you want one clean instruction set:
+
+> Implement a compact global status area in the SimpleAide header using small chips with tooltips. Add `GET /api/status` that aggregates: DEV/PROD mode, vault lock + auto-lock remaining, DB connection + readOnly, AI backend health (online/offline + model count), server ports/URLs, and active run count. Frontend renders pills: ENV, Vault, DB, LLM, API, Runs. Clicking a chip navigates to the relevant tab.
+> Then implement the Shell tab using xterm.js + node-pty over WebSocket, respecting DEV/PROD restrictions.
+> After that, implement Database tab grid-first viewer/editor with DEV editable and PROD read-only.
+
+---
+
+If you want, paste what’s currently inside `server/runs.ts` and whether you already have `/api/status` or similar, and I’ll tailor the status payload so it matches your codebase without refactors.
