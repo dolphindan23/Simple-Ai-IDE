@@ -444,6 +444,149 @@ Provide complete, runnable pytest code.`;
   storage.setArtifact(task.id, "test.log", testOutput);
 }
 
+interface VerifyResult {
+  passed: boolean;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}
+
+async function runVerifyStep(cwd: string, verifyCommand?: string): Promise<VerifyResult> {
+  const command = verifyCommand || "npm test";
+  const startTime = Date.now();
+  
+  const parts = command.split(" ");
+  const [cmd, ...args] = parts;
+  
+  const result = runCommand([cmd, ...args], cwd);
+  const durationMs = Date.now() - startTime;
+  
+  return {
+    passed: result.exitCode === 0,
+    command,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    durationMs,
+  };
+}
+
+async function runTestFixerLoop(
+  task: Task,
+  ollama: OllamaAdapter,
+  verifyCommand: string,
+  maxAttempts: number = MAX_TESTFIXER_ATTEMPTS
+): Promise<{ success: boolean; attempts: number; finalResult: VerifyResult }> {
+  const cwd = path.resolve(task.repoPath);
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    log(task.id, `[INFO] TestFixer attempt ${attempt}/${maxAttempts}\n`);
+    
+    const verifyResult = await runVerifyStep(cwd, verifyCommand);
+    storage.setArtifact(task.id, `verify_attempt_${attempt}.json`, JSON.stringify(verifyResult, null, 2));
+    
+    if (verifyResult.passed) {
+      log(task.id, `[SUCCESS] Tests passed on attempt ${attempt}\n`);
+      return { success: true, attempts: attempt, finalResult: verifyResult };
+    }
+    
+    log(task.id, `[WARN] Tests failed (exit code ${verifyResult.exitCode})\n`);
+    log(task.id, `[INFO] Stderr: ${verifyResult.stderr.slice(0, 500)}...\n`);
+    
+    if (attempt >= maxAttempts) {
+      log(task.id, `[ERROR] Max attempts (${maxAttempts}) reached. TestFixer giving up.\n`);
+      return { success: false, attempts: attempt, finalResult: verifyResult };
+    }
+    
+    const isAvailable = await ollama.isAvailable();
+    if (!isAvailable) {
+      log(task.id, "[WARN] Ollama not available for TestFixer. Cannot generate fix.\n");
+      return { success: false, attempts: attempt, finalResult: verifyResult };
+    }
+    
+    log(task.id, "[INFO] Generating fix diff with AI...\n");
+    
+    const targetFiles = extractTargetFilesFromGoal(task.goal, cwd);
+    const snapshot = captureRepoSnapshot(cwd, targetFiles);
+    const snapshotContext = formatSnapshotForPrompt(snapshot);
+    
+    const fixPrompt = `You are an expert programmer. A test/build verification has FAILED.
+
+${snapshotContext}
+
+=== ORIGINAL GOAL ===
+${task.goal}
+
+=== VERIFY COMMAND ===
+${verifyCommand}
+
+=== FAILURE OUTPUT ===
+Exit Code: ${verifyResult.exitCode}
+
+STDOUT:
+${verifyResult.stdout.slice(0, 2000)}
+
+STDERR:
+${verifyResult.stderr.slice(0, 2000)}
+
+=== YOUR TASK ===
+Generate a unified diff that fixes the error. Follow the STRICT OUTPUT FORMAT:
+
+1. For EXISTING FILES (modify):
+   --- a/path/to/file.ext
+   +++ b/path/to/file.ext
+   @@ -startLine,count +startLine,count @@
+    context line
+   -removed line
+   +added line
+
+2. For NEW FILES (create):
+   --- /dev/null
+   +++ b/path/to/newfile.ext
+   @@ -0,0 +1,lineCount @@
+   +new content
+
+Output ONLY the unified diff. No explanations.`;
+
+    let response = "";
+    await ollama.generate(fixPrompt, (token) => {
+      response += token;
+    });
+    
+    storage.setArtifact(task.id, `fix_response_${attempt}.txt`, response);
+    
+    const fixDiff = extractDiffFromResponse(response);
+    if (!fixDiff) {
+      log(task.id, "[ERROR] No valid fix diff found in AI response\n");
+      continue;
+    }
+    
+    const validation = validatePatch(fixDiff, cwd);
+    if (!validation.valid) {
+      log(task.id, `[WARN] Fix diff validation failed:\n${formatValidationErrors(validation)}\n`);
+      continue;
+    }
+    
+    storage.setArtifact(task.id, `fix_patch_${attempt}.diff`, fixDiff);
+    
+    gitSnapshot(cwd, `SimpleAide: Before fix attempt ${attempt}`);
+    
+    const applyResult = applyDiff(cwd, fixDiff);
+    if (!applyResult.success) {
+      log(task.id, `[ERROR] Failed to apply fix: ${applyResult.error}\n`);
+      continue;
+    }
+    
+    log(task.id, `[INFO] Fix applied. Re-verifying...\n`);
+    gitSnapshot(cwd, `SimpleAide: Applied fix attempt ${attempt}`);
+  }
+  
+  const finalResult = await runVerifyStep(cwd, verifyCommand);
+  return { success: finalResult.passed, attempts: maxAttempts, finalResult };
+}
+
 export async function runTask(taskId: string): Promise<void> {
   const task = await storage.getTask(taskId);
   if (!task) {
@@ -483,7 +626,7 @@ export async function runTask(taskId: string): Promise<void> {
   }
 }
 
-export async function applyTaskDiff(taskId: string, diffName: string): Promise<{ success: boolean; error?: string }> {
+export async function applyTaskDiff(taskId: string, diffName: string): Promise<{ success: boolean; error?: string; filesModified?: string[] }> {
   const task = await storage.getTask(taskId);
   if (!task) {
     return { success: false, error: "Task not found" };
@@ -496,10 +639,17 @@ export async function applyTaskDiff(taskId: string, diffName: string): Promise<{
 
   const cwd = path.resolve(task.repoPath);
   
-  // Create git snapshot before applying
+  const validation = validatePatch(diffContent, cwd);
+  if (!validation.valid) {
+    storage.setArtifact(taskId, `${diffName}.validation.txt`, formatValidationErrors(validation));
+    return { 
+      success: false, 
+      error: `Patch validation failed:\n${validation.errors.join("\n")}` 
+    };
+  }
+  
   gitSnapshot(cwd, `SimpleAide: Before applying ${diffName}`);
   
-  // Apply the diff
   const result = applyDiff(cwd, diffContent);
   
   if (result.success) {
@@ -507,4 +657,47 @@ export async function applyTaskDiff(taskId: string, diffName: string): Promise<{
   }
   
   return result;
+}
+
+export async function applyAndVerify(
+  taskId: string,
+  diffName: string,
+  verifyCommand?: string
+): Promise<{ 
+  applySuccess: boolean; 
+  verifySuccess: boolean; 
+  error?: string;
+  attempts?: number;
+  filesModified?: string[];
+}> {
+  const applyResult = await applyTaskDiff(taskId, diffName);
+  
+  if (!applyResult.success) {
+    return { 
+      applySuccess: false, 
+      verifySuccess: false, 
+      error: applyResult.error,
+      filesModified: applyResult.filesModified
+    };
+  }
+  
+  if (!verifyCommand) {
+    return { applySuccess: true, verifySuccess: true, filesModified: applyResult.filesModified };
+  }
+  
+  const task = await storage.getTask(taskId);
+  if (!task) {
+    return { applySuccess: true, verifySuccess: false, error: "Task not found for verification" };
+  }
+  
+  const ollama = new OllamaAdapter();
+  const fixerResult = await runTestFixerLoop(task, ollama, verifyCommand);
+  
+  return {
+    applySuccess: true,
+    verifySuccess: fixerResult.success,
+    attempts: fixerResult.attempts,
+    filesModified: applyResult.filesModified,
+    error: fixerResult.success ? undefined : `Verification failed after ${fixerResult.attempts} attempts`
+  };
 }

@@ -164,8 +164,28 @@ export const defaultSettings: Settings = settingsSchema.parse({});
 // ==================== Phase D1: Workflow Engine Types ====================
 
 // Step types for workflow runs
-export const stepTypeSchema = z.enum(["plan", "implement", "review", "test", "fix"]);
+export const stepTypeSchema = z.enum(["plan", "implement", "review", "test", "fix", "verify"]);
 export type StepType = z.infer<typeof stepTypeSchema>;
+
+// Validation result for patch diffs
+export const patchValidationResultSchema = z.object({
+  valid: z.boolean(),
+  errors: z.array(z.string()),
+  warnings: z.array(z.string()),
+  hunkCount: z.number(),
+});
+export type PatchValidationResult = z.infer<typeof patchValidationResultSchema>;
+
+// Verify step result
+export const verifyResultSchema = z.object({
+  passed: z.boolean(),
+  command: z.string(),
+  exitCode: z.number(),
+  stdout: z.string(),
+  stderr: z.string(),
+  durationMs: z.number(),
+});
+export type VerifyResult = z.infer<typeof verifyResultSchema>;
 
 // Step status
 export const stepStatusSchema = z.enum(["pending", "running", "passed", "failed", "skipped"]);
