@@ -148,6 +148,10 @@ The application includes a real-time agent activity monitoring system:
   - In-process pub/sub for real-time event broadcasting
   - Event types: RUN_STATUS, AGENT_STATUS, STEP, READ_FILE, WRITE_FILE, TOOL_CALL, ERROR, PROPOSE_CHANGESET, NEEDS_APPROVAL
   - Dual-write to database and SSE broadcast
+  - Fast/Accurate mode telemetry filtering:
+    - Critical events (RUN_STATUS, ERROR, NEEDS_APPROVAL, AGENT_STATUS, PROPOSE_CHANGESET) always emit
+    - Verbose events (READ_FILE, TOOL_CALL, NOTE) are skipped when run is in fast_mode
+    - STEP and WRITE_FILE events emit in both modes
 
 - **SSE Streaming Endpoint** (`/api/ai/stream`):
   - Server-Sent Events for real-time updates
