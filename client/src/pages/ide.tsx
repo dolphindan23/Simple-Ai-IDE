@@ -16,6 +16,7 @@ import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Tra
 import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
+import { RunTimeline } from "@/components/RunTimeline";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -766,6 +767,10 @@ export default function IDEPage() {
                 
                 {activeTab === "ai-agents" && (
                   <AIAgentsPanel />
+                )}
+                
+                {activeTab === "runs" && (
+                  <RunTimeline />
                 )}
                 
                 {/* Terminal - always visible when not hidden, on Editor tab */}

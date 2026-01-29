@@ -191,3 +191,43 @@ The app serves on port 8521 with both frontend and backend.
 - 2026-01-29: Consolidated AI configuration - Removed AI tab from Settings modal, all AI backend config now in AI Agents panel
 - 2026-01-29: Streamlined UI - Moved Secrets/Vault and API Integrations to dedicated Secrets workspace tab, Settings modal now only has General and Editor tabs (2 tabs)
 - 2026-01-29: Vault reset and custom APIs - Added vault reset button with confirmation dialog, added Custom tab for user-defined API services with name/key/endpoint storage
+- 2026-01-29: Phase D1 - Workflow Engine with checkpoints: Added TaskRun/StepRun types, file-based runs storage (.simpleaide/runs/), REST APIs for run management (create, list, execute step, rerun from checkpoint), Run Timeline UI with step status visualization and artifact viewing
+
+## Workflow Engine (Phase D)
+
+### Run Storage Structure
+```
+.simpleaide/runs/
+└── <runId>/
+    ├── run.json           # Run metadata (goal, status, timestamps)
+    ├── 01_plan/
+    │   ├── input.json     # Step input parameters
+    │   ├── status.json    # Step status metadata
+    │   └── plan.json      # Generated artifact
+    ├── 02_implement/
+    │   ├── input.json
+    │   ├── status.json
+    │   └── patch.diff     # Generated diff
+    └── ...
+```
+
+### Run API Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/runs | Create new run |
+| GET | /api/runs | List all runs |
+| GET | /api/runs/:id | Get run with all steps |
+| POST | /api/runs/:id/step | Execute a step |
+| POST | /api/runs/:id/rerun | Rerun from checkpoint |
+| POST | /api/runs/:id/complete | Mark run complete/failed/cancelled |
+| GET | /api/runs/:id/steps/:stepNum/artifact/:name | Get step artifact |
+
+### Step Types
+- **plan**: Generate implementation plan
+- **implement**: Generate code changes as diff
+- **review**: Code review feedback
+- **test**: Run tests or generate test suggestions
+- **fix**: Fix failing tests
+
+### Step Statuses
+- pending, running, passed, failed, skipped

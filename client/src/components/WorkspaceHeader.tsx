@@ -1,7 +1,7 @@
-import { Code, Eye, Database, KeyRound, Terminal, SquareTerminal, Wrench, Bot } from "lucide-react";
+import { Code, Eye, Database, KeyRound, Terminal, SquareTerminal, Wrench, Bot, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type WorkspaceTab = "editor" | "preview" | "database" | "secrets" | "console" | "shell" | "developer" | "ai-agents";
+export type WorkspaceTab = "editor" | "preview" | "database" | "secrets" | "console" | "shell" | "developer" | "ai-agents" | "runs";
 
 interface TabConfig {
   id: WorkspaceTab;
@@ -18,6 +18,7 @@ const tabs: TabConfig[] = [
   { id: "shell", label: "Shell", icon: SquareTerminal },
   { id: "developer", label: "Developer", icon: Wrench },
   { id: "ai-agents", label: "AI Agents", icon: Bot },
+  { id: "runs", label: "Runs", icon: Play },
 ];
 
 interface WorkspaceHeaderProps {

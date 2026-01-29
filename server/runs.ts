@@ -184,18 +184,27 @@ export class RunsStorage {
     const stepDir = getStepDir(runId, stepNumber, stepType);
     const statusPath = path.join(stepDir, "status.json");
 
-    if (!fs.existsSync(statusPath)) {
-      return;
+    // Load existing status to preserve startedAt
+    let existingStatus: any = {};
+    if (fs.existsSync(statusPath)) {
+      try {
+        existingStatus = JSON.parse(fs.readFileSync(statusPath, "utf-8"));
+      } catch {
+        // If parse fails, start fresh
+      }
     }
 
     const statusMeta = {
+      ...existingStatus,
       status,
-      startedAt: status === "running" ? new Date().toISOString() : undefined,
+      startedAt: status === "running" && !existingStatus.startedAt 
+        ? new Date().toISOString() 
+        : existingStatus.startedAt,
       completedAt: ["passed", "failed", "skipped"].includes(status) 
         ? new Date().toISOString() 
-        : undefined,
-      durationMs,
-      errorMessage,
+        : existingStatus.completedAt,
+      durationMs: durationMs ?? existingStatus.durationMs,
+      errorMessage: errorMessage ?? existingStatus.errorMessage,
     };
 
     fs.writeFileSync(statusPath, JSON.stringify(statusMeta, null, 2), { mode: 0o600 });
@@ -276,11 +285,18 @@ export class RunsStorage {
   private saveRunMetadata(runId: string, metadata: RunMetadata): void {
     const runDir = getRunDir(runId);
     ensureDir(runDir);
+    const metadataPath = path.join(runDir, "run.json");
     fs.writeFileSync(
-      path.join(runDir, "run.json"),
+      metadataPath,
       JSON.stringify(metadata, null, 2),
       { mode: 0o600 }
     );
+    // Ensure file permissions are set correctly (in case file already existed)
+    try {
+      fs.chmodSync(metadataPath, 0o600);
+    } catch {
+      // Ignore chmod errors on some systems
+    }
   }
 
   private loadSteps(runId: string): StepRun[] {
