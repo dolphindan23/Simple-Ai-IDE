@@ -6,6 +6,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
+import { FileTabsBar } from "@/components/FileTabsBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useTheme } from "@/components/ThemeProvider";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ export default function IDEPage() {
   
   // State
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [openFiles, setOpenFiles] = useState<Array<{ path: string; isDirty: boolean }>>([]);
   const [fileContent, setFileContent] = useState<string>("");
   const [originalContent, setOriginalContent] = useState<string>("");
   const [isDirty, setIsDirty] = useState(false);
@@ -118,9 +120,48 @@ export default function IDEPage() {
   const handleContentChange = useCallback((newContent: string | undefined) => {
     if (newContent !== undefined) {
       setFileContent(newContent);
-      setIsDirty(newContent !== originalContent);
+      const newIsDirty = newContent !== originalContent;
+      setIsDirty(newIsDirty);
+      // Sync dirty state with openFiles
+      if (selectedFile) {
+        setOpenFiles(prev => prev.map(f => 
+          f.path === selectedFile ? { ...f, isDirty: newIsDirty } : f
+        ));
+      }
     }
-  }, [originalContent]);
+  }, [originalContent, selectedFile]);
+
+  // Handle file selection - add to open files if not already there
+  const handleSelectFile = useCallback((path: string) => {
+    setSelectedFile(path);
+    setOpenFiles(prev => {
+      if (prev.some(f => f.path === path)) {
+        return prev;
+      }
+      return [...prev, { path, isDirty: false }];
+    });
+  }, []);
+
+  // Handle closing a file tab
+  const handleCloseFile = useCallback((path: string) => {
+    setOpenFiles(prev => {
+      const filtered = prev.filter(f => f.path !== path);
+      // If we're closing the selected file, select the previous or next file
+      if (selectedFile === path) {
+        const currentIndex = prev.findIndex(f => f.path === path);
+        if (filtered.length > 0) {
+          const newIndex = Math.min(currentIndex, filtered.length - 1);
+          setSelectedFile(filtered[newIndex].path);
+        } else {
+          setSelectedFile(null);
+          setFileContent("");
+          setOriginalContent("");
+          setIsDirty(false);
+        }
+      }
+      return filtered;
+    });
+  }, [selectedFile]);
 
   // Save file mutation
   const saveFileMutation = useMutation({
@@ -135,6 +176,12 @@ export default function IDEPage() {
     onSuccess: () => {
       setOriginalContent(fileContent);
       setIsDirty(false);
+      // Also clear dirty state in openFiles
+      if (selectedFile) {
+        setOpenFiles(prev => prev.map(f => 
+          f.path === selectedFile ? { ...f, isDirty: false } : f
+        ));
+      }
       toast({
         title: "File saved",
         description: `${selectedFile} saved successfully.`,
@@ -157,7 +204,7 @@ export default function IDEPage() {
     },
     onSuccess: (_, filePath) => {
       refetchFiles();
-      setSelectedFile(filePath);
+      handleSelectFile(filePath);
       toast({ title: "File created", description: `${filePath} created.` });
     },
     onError: (error) => {
@@ -186,9 +233,13 @@ export default function IDEPage() {
       const response = await apiRequest("POST", "/api/fs/rename", { oldPath, newPath });
       return response.json();
     },
-    onSuccess: (_, { newPath }) => {
+    onSuccess: (_, { oldPath, newPath }) => {
       refetchFiles();
-      setSelectedFile(newPath);
+      // Update openFiles if renamed file was open
+      setOpenFiles(prev => prev.map(f => f.path === oldPath ? { ...f, path: newPath } : f));
+      if (selectedFile === oldPath) {
+        setSelectedFile(newPath);
+      }
       toast({ title: "Renamed successfully" });
     },
     onError: (error) => {
@@ -202,12 +253,10 @@ export default function IDEPage() {
       const response = await apiRequest("POST", "/api/fs/delete", { path: targetPath });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, deletedPath) => {
       refetchFiles();
-      setSelectedFile(null);
-      setFileContent("");
-      setOriginalContent("");
-      setIsDirty(false);
+      // Remove from open files and handle selection
+      handleCloseFile(deletedPath);
       toast({ title: "Deleted successfully" });
     },
     onError: (error) => {
@@ -224,7 +273,7 @@ export default function IDEPage() {
     onSuccess: (data) => {
       refetchFiles();
       if (data.newPath) {
-        setSelectedFile(data.newPath);
+        handleSelectFile(data.newPath);
       }
       toast({ title: "File duplicated" });
     },
@@ -717,7 +766,7 @@ export default function IDEPage() {
         onOpenChange={setShowCommandPalette}
         files={files}
         onSelectFile={(path) => {
-          setSelectedFile(path);
+          handleSelectFile(path);
           setActiveTab("editor");
         }}
         onToggleTerminal={handleToggleTerminal}
@@ -741,7 +790,7 @@ export default function IDEPage() {
                 <FileTree
                   files={files}
                   selectedPath={selectedFile}
-                  onSelectFile={setSelectedFile}
+                  onSelectFile={handleSelectFile}
                   onRename={handleRenameFromTree}
                   onDelete={handleDeleteFromTree}
                   onCopyPath={handleCopyPath}
@@ -761,8 +810,17 @@ export default function IDEPage() {
               <WorkspaceHeader
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
-                fileName={selectedFile}
               />
+              
+              {/* File Tabs Bar - shown only when Editor tab is active */}
+              {activeTab === "editor" && (
+                <FileTabsBar
+                  openFiles={openFiles}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectFile}
+                  onCloseFile={handleCloseFile}
+                />
+              )}
               
               {/* Main Workspace Content */}
               <div className="flex-1 overflow-hidden flex flex-col">

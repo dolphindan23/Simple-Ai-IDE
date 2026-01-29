@@ -24,10 +24,9 @@ const tabs: TabConfig[] = [
 interface WorkspaceHeaderProps {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
-  fileName?: string | null;
 }
 
-export function WorkspaceHeader({ activeTab, onTabChange, fileName }: WorkspaceHeaderProps) {
+export function WorkspaceHeader({ activeTab, onTabChange }: WorkspaceHeaderProps) {
   return (
     <div className="flex items-center h-9 bg-muted/30 border-b border-border px-1 gap-0.5 shrink-0">
       {tabs.map((tab) => {
@@ -52,14 +51,6 @@ export function WorkspaceHeader({ activeTab, onTabChange, fileName }: WorkspaceH
           </button>
         );
       })}
-      
-      {fileName && activeTab === "editor" && (
-        <div className="ml-auto flex items-center gap-2 px-2">
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            {fileName}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
