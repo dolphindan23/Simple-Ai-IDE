@@ -1,0 +1,325 @@
+The main LLM “types” that matter for coding systems
+
+Think of models as tools, not personalities.
+
+1️⃣ Code-tuned models (“Coder” models)
+
+What they’re optimized for
+
+Syntax correctness
+
+Following diffs/patch formats
+
+Multi-file edits
+
+Refactors
+
+Test fixes
+
+Strengths
+
+Lowest hallucination rate for code
+
+Best at unified diffs
+
+Strong with compiler/test errors
+
+Weaknesses
+
+Not great at high-level planning
+
+Sometimes “overfits” to syntax and misses intent
+
+Best used for
+
+Writing code
+
+Editing existing code
+
+Refactoring
+
+Fixing failing tests
+
+Generating patches
+
+In SimpleAide terms
+
+“This model is best when the output must compile.”
+
+2️⃣ General reasoning models (“General / Chat”)
+
+What they’re optimized for
+
+Explanation
+
+Planning
+
+Reasoning
+
+Tradeoff analysis
+
+Reviewing decisions
+
+Strengths
+
+Good architectural thinking
+
+Better explanations
+
+Better at “what should we do?”
+
+Weaknesses
+
+Higher chance of code hallucinations
+
+Less strict about formatting
+
+Best used for
+
+Task breakdown
+
+Planning agent
+
+Code review
+
+Explaining errors
+
+Writing docs
+
+In SimpleAide terms
+
+“This model is best when the output must make sense.”
+
+3️⃣ Deep-reasoning / “thinking” models
+
+(Some models explicitly emphasize chain-of-thought / reasoning depth.)
+
+What they’re optimized for
+
+Multi-step reasoning
+
+Long dependency chains
+
+Complex logic
+
+Strengths
+
+Best for tricky bugs
+
+Better at understanding legacy code
+
+Better at “why is this broken?”
+
+Weaknesses
+
+Slower
+
+Often worse at raw code formatting than coder models
+
+Best used for
+
+Debugging complex issues
+
+Reviewing architectural changes
+
+Root-cause analysis
+
+In SimpleAide terms
+
+“This model is best when the problem is hard, not when the code is long.”
+
+4️⃣ Vision / multimodal models
+
+What they’re optimized for
+
+Images
+
+UI screenshots
+
+Diagrams
+
+PDFs
+
+Strengths
+
+Can understand UI layouts
+
+Can compare designs to code
+
+Can read screenshots or architecture diagrams
+
+Weaknesses
+
+Usually weaker at pure code writing
+
+Slower and heavier
+
+Best used for
+
+“Turn this screenshot into components”
+
+Checking UI consistency
+
+Mapping Figma → code
+
+Understanding logs or charts visually
+
+In SimpleAide terms
+
+“This model is best when the input is visual.”
+
+5️⃣ Tool-using / agentic models
+
+(Some models are better at calling tools, following schemas, or structured outputs.)
+
+What they’re optimized for
+
+JSON output
+
+Tool calls
+
+Following strict contracts
+
+Multi-step workflows
+
+Strengths
+
+Reliable orchestration
+
+Works well with planners and agents
+
+Less free-form chaos
+
+Weaknesses
+
+Often less creative
+
+Can be verbose or rigid
+
+Best used for
+
+Orchestrator / controller agent
+
+Workflow execution
+
+Tool calling (search, run tests, query DB)
+
+In SimpleAide terms
+
+“This model is best when the system is driving the workflow.”
+
+6️⃣ Small / fast models
+
+What they’re optimized for
+
+Speed
+
+Low resource usage
+
+Strengths
+
+Instant responses
+
+Cheap/free locally
+
+Great for small tasks
+
+Weaknesses
+
+Shallow reasoning
+
+Weak at big refactors
+
+Best used for
+
+Formatting
+
+Renaming variables
+
+Small refactors
+
+Summaries
+
+Quick checks
+
+In SimpleAide terms
+
+“This model is best when latency matters more than brilliance.”
+
+How this maps to coding tasks (generic, non-hardcoded)
+Task	Best model type
+Plan a feature	General / Reasoning
+Generate patch diff	Code-tuned
+Refactor codebase	Code-tuned (with higher context)
+Fix failing tests	Code-tuned
+Debug complex bug	Deep-reasoning
+Review a change	General / Reasoning
+Write docs	General
+Quick rename/format	Small / Fast
+Understand UI screenshot	Vision
+Orchestrate tools	Tool-capable
+
+This table is educational, not prescriptive — perfect for SimpleAide.
+
+How to present this inside SimpleAide (without hard-coding)
+A) Model “Capabilities” instead of “Recommended model”
+
+Each model in your catalog shows capability badges:
+
+🧠 Reasoning
+
+🧩 Code
+
+👁 Vision
+
+⚙️ Tool-use
+
+⚡ Fast
+
+These come from:
+
+Metadata (if available)
+
+Heuristics
+
+User-assigned tags
+
+B) Task-to-capability hints (not auto-selection)
+
+When a user assigns a model to a role, show a hint, not a rule:
+
+“This role benefits from: Code + Tool-use”
+
+If the chosen model doesn’t match:
+
+“This model may be slower for large refactors.”
+
+No blocking. No hard rules.
+
+C) Simple educational panel (optional)
+
+Add a collapsible “How to choose a model” section that explains:
+
+Model types
+
+Size tradeoffs
+
+Context vs speed
+
+Temperature effects
+
+No brand names. No vendor bias.
+
+What not to do (important)
+
+❌ Don’t lock roles to specific models
+❌ Don’t ship default “best models”
+❌ Don’t assume Ollama metadata is complete
+❌ Don’t hide tradeoffs
+
+What to tell your agent (copy/paste)
+
+In SimpleAide, treat models as capability-based rather than brand-based.
+Classify models dynamically into types (code, general, reasoning, vision, tool-capable, fast) using metadata, light heuristics, and optional user tags.
+Surface educational guidance that explains which model types are better for planning, coding, refactoring, debugging, reviewing, and UI work—without hard-coding specific model names or enforcing defaults.
+Display capability badges and Model Cards that describe strengths, weaknesses, and tradeoffs rather than “recommended models.”
