@@ -10,6 +10,8 @@ import { runsStorage } from "./runs";
 import { runAutoWorkflow, applyDiffWithBackup, revertDiff, isWorkflowRunning } from "./autoRunner";
 import * as db from "./database";
 import { setupShellWebSocket, getActiveSessions as getActiveShellSessions } from "./shell";
+import * as aiDb from "./aiDb";
+import { subscribeToRun, subscribeToAllRuns, emitRunStatus, emitAgentStatus, emitStep } from "./aiEvents";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -2050,6 +2052,264 @@ export async function registerRoutes(
       
       const result = db.executeQuery(dbPath, sql);
       res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============ AI AGENT VISIBILITY ENDPOINTS ============
+
+  // Get all agent profiles
+  app.get("/api/ai/agent-profiles", (_req: Request, res: Response) => {
+    try {
+      const profiles = aiDb.getAgentProfiles();
+      res.json(profiles);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single agent profile
+  app.get("/api/ai/agent-profiles/:id", (req: Request, res: Response) => {
+    try {
+      const profile = aiDb.getAgentProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({ error: "Agent profile not found" });
+      }
+      res.json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Main SSE stream for all AI events (used by frontend)
+  app.get("/api/ai/stream", (req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    // Send initial state
+    const agents = aiDb.getAgentProfiles();
+    const runs = aiDb.getRecentRuns(20);
+    const events = runs.length > 0 
+      ? runs.flatMap(r => aiDb.getRunEvents(r.id, 50))
+      : [];
+    
+    const initData = {
+      agents,
+      runs,
+      events: events.slice(-100)
+    };
+    res.write(`event: init\ndata: ${JSON.stringify(initData)}\n\n`);
+    
+    // Subscribe to all events
+    const unsubscribe = subscribeToAllRuns((event) => {
+      res.write(`event: run_event\ndata: ${JSON.stringify(event)}\n\n`);
+    });
+    
+    // Heartbeat every 30s
+    const heartbeat = setInterval(() => {
+      res.write(`:heartbeat\n\n`);
+    }, 30000);
+    
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
+
+  // Update agent profile
+  app.put("/api/ai/agent-profiles/:id", (req: Request, res: Response) => {
+    try {
+      const profile = aiDb.updateAgentProfile(req.params.id, req.body);
+      if (!profile) {
+        return res.status(404).json({ error: "Agent profile not found" });
+      }
+      res.json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new AI run
+  app.post("/api/ai/runs", (req: Request, res: Response) => {
+    try {
+      const { mode, goal, agents, fast_mode, run_key } = req.body;
+      
+      if (!mode) {
+        return res.status(400).json({ error: "Mode is required" });
+      }
+      
+      const id = `run_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      
+      const run = aiDb.createRun({
+        id,
+        run_key: run_key || null,
+        mode,
+        status: "queued",
+        goal: goal || null,
+        agents: agents || [],
+        fast_mode: fast_mode || false,
+        created_by_user_id: null
+      });
+      
+      res.status(201).json(run);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get AI run by ID
+  app.get("/api/ai/runs/:id", (req: Request, res: Response) => {
+    try {
+      const run = aiDb.getRun(req.params.id);
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      res.json(run);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get recent runs
+  app.get("/api/ai/runs", (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const runs = aiDb.getRecentRuns(limit);
+      res.json(runs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get run events (polling fallback)
+  app.get("/api/ai/runs/:id/events", (req: Request, res: Response) => {
+    try {
+      const cursor = req.query.cursor ? parseInt(req.query.cursor as string) : undefined;
+      const limit = parseInt(req.query.limit as string) || 100;
+      
+      const events = aiDb.getRunEvents(req.params.id, { cursor, limit });
+      res.json({
+        events,
+        cursor: events.length > 0 ? events[events.length - 1].id : cursor
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // SSE stream for run events
+  app.get("/api/ai/runs/:id/stream", (req: Request, res: Response) => {
+    const runId = req.params.id;
+    
+    const run = aiDb.getRun(runId);
+    if (!run) {
+      return res.status(404).json({ error: "Run not found" });
+    }
+    
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    // Send initial state
+    const agentStatuses = aiDb.getLatestAgentStatuses(runId);
+    const initialData = {
+      type: "init",
+      run,
+      agentStatuses: Object.fromEntries(agentStatuses)
+    };
+    res.write(`event: init\ndata: ${JSON.stringify(initialData)}\n\n`);
+    
+    // Subscribe to events
+    const unsubscribe = subscribeToRun(runId, (event) => {
+      res.write(`event: event\ndata: ${JSON.stringify(event)}\n\n`);
+    });
+    
+    // Heartbeat every 30s
+    const heartbeat = setInterval(() => {
+      res.write(`:heartbeat\n\n`);
+    }, 30000);
+    
+    // Cleanup on close
+    req.on("close", () => {
+      unsubscribe();
+      clearInterval(heartbeat);
+    });
+  });
+
+  // Update run status (internal use)
+  app.post("/api/ai/runs/:id/status", (req: Request, res: Response) => {
+    try {
+      const { status, message } = req.body;
+      
+      if (!status) {
+        return res.status(400).json({ error: "Status is required" });
+      }
+      
+      const event = emitRunStatus(req.params.id, status, message);
+      res.json({ success: true, event });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Emit event for a run (internal use)
+  app.post("/api/ai/runs/:id/events", (req: Request, res: Response) => {
+    try {
+      const { agent_id, type, message, data } = req.body;
+      
+      if (!type || !message) {
+        return res.status(400).json({ error: "Type and message are required" });
+      }
+      
+      const event = aiDb.addRunEvent({
+        run_id: req.params.id,
+        agent_id: agent_id || null,
+        type,
+        message,
+        data: data || {}
+      });
+      
+      res.status(201).json(event);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get agent roster (current status of all agents for a run)
+  app.get("/api/ai/runs/:id/roster", (req: Request, res: Response) => {
+    try {
+      const runId = req.params.id;
+      const run = aiDb.getRun(runId);
+      
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const profiles = aiDb.getAgentProfiles();
+      const agentStatuses = aiDb.getLatestAgentStatuses(runId);
+      const latestEvents = aiDb.getLatestEventPerAgent(runId);
+      
+      const roster = profiles
+        .filter(p => p.enabled && run.agents.includes(p.id))
+        .map(profile => {
+          const statusInfo = agentStatuses.get(profile.id);
+          const latestEvent = latestEvents.get(profile.id);
+          
+          return {
+            id: profile.id,
+            display_name: profile.display_name,
+            model: profile.model,
+            status: statusInfo?.status || "idle",
+            current_action: latestEvent?.message || null,
+            last_updated: latestEvent?.created_at || null
+          };
+        });
+      
+      res.json(roster);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

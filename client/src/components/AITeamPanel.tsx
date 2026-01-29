@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, Zap, Target, Clock, Eye } from "lucide-react";
+import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, Zap, Target, Clock, Eye, Users, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,8 +10,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { Task, TaskMode, Artifact } from "@shared/schema";
+import { useAIRunEvents } from "@/hooks/useAIRunEvents";
+import { AgentRoster } from "@/components/AgentRosterCard";
+import { ActivityTimeline, CompactActivityFeed } from "@/components/ActivityTimeline";
 
 interface AITeamPanelProps {
   goal: string;
@@ -431,6 +435,72 @@ export function AITeamPanel({
           </Tooltip>
         </div>
       </div>
+
+      <AgentVisibilitySection />
+    </div>
+  );
+}
+
+function AgentVisibilitySection() {
+  const { events, agentProfiles, isConnected } = useAIRunEvents();
+  const [activeTab, setActiveTab] = useState<string>("activity");
+
+  return (
+    <div className="border-t pt-3 mt-3" data-testid="agent-visibility-section">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Agent Activity</span>
+        </div>
+        <Badge 
+          variant="outline" 
+          className={cn(
+            "text-[10px]",
+            isConnected ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+          )}
+        >
+          {isConnected ? "Live" : "Connecting..."}
+        </Badge>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="w-full grid grid-cols-2 h-8">
+          <TabsTrigger value="activity" className="text-xs gap-1" data-testid="tab-activity">
+            <Activity className="h-3 w-3" />
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger value="agents" className="text-xs gap-1" data-testid="tab-agents">
+            <Users className="h-3 w-3" />
+            Agents
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="activity" className="mt-2">
+          <div className="h-48 border rounded-md bg-background/50">
+            <ActivityTimeline 
+              events={events} 
+              agentProfiles={agentProfiles} 
+              maxEvents={30}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="agents" className="mt-2">
+          <div className="space-y-2">
+            <AgentRoster 
+              profiles={agentProfiles} 
+              events={events} 
+              compact 
+            />
+            {agentProfiles.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                <Users className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                Loading agents...
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -136,6 +136,41 @@ The agent code editing pipeline includes comprehensive trust hardening features 
   - Requires explicit user confirmation before applying
   - Displays clear warning with file lists
 
+### Real-Time Agent Visibility System
+The application includes a real-time agent activity monitoring system:
+
+- **Agent Profiles Database** (`server/aiDb.ts`):
+  - SQLite tables for agent_profiles, ai_runs, and ai_run_events
+  - Stores 5 seeded agent roles: Planner, Coder, Reviewer, TestFixer, Doc
+  - Indexed for fast event queries by run_id and agent_role
+
+- **Event Emitter** (`server/aiEvents.ts`):
+  - In-process pub/sub for real-time event broadcasting
+  - Event types: RUN_STATUS, AGENT_STATUS, STEP, READ_FILE, WRITE_FILE, TOOL_CALL, ERROR, PROPOSE_CHANGESET, NEEDS_APPROVAL
+  - Dual-write to database and SSE broadcast
+
+- **SSE Streaming Endpoint** (`/api/ai/stream`):
+  - Server-Sent Events for real-time updates
+  - Init event sends current runs, events, and agent profiles
+  - 30-second heartbeat with reconnection support
+  - Fallback polling at `/api/ai/runs/:id/events`
+
+- **Agent Roster UI** (`client/src/components/AgentRosterCard.tsx`):
+  - Visual agent cards with status indicators (idle, working, waiting, done, error)
+  - Color-coded avatars with role-specific emojis
+  - Compact and expanded display modes
+
+- **Activity Timeline** (`client/src/components/ActivityTimeline.tsx`):
+  - Real-time event feed with timestamp formatting
+  - Event-type icons and color coding
+  - Agent attribution with profile colors
+  - ScrollArea with auto-scroll behavior
+
+- **SSE Hook** (`client/src/hooks/useAIRunEvents.ts`):
+  - React hook for SSE subscription
+  - Auto-reconnect on connection loss
+  - State management for events, runs, and agent profiles
+
 ### Security
 - **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.
 - **File Permissions**: Strict file permissions (0600) for sensitive files and backups.

@@ -5,6 +5,8 @@ import { runsStorage } from "./runs";
 import { ollama } from "./ollama";
 import { validatePatch, formatValidationErrors, type TrustLimits } from "./patchValidator";
 import type { StepType, StepInput, TaskRun } from "@shared/schema";
+import { createRun, getRun, getRunByKey } from "./aiDb";
+import { emitRunStatus, emitAgentStatus, emitStep, emitWriteFile, emitError, emitProposeChangeset } from "./aiEvents";
 
 const MAX_FIX_ATTEMPTS = 3;
 const PROJECT_ROOT = path.resolve(process.cwd());
@@ -386,6 +388,20 @@ export async function runAutoWorkflow(options: AutoRunOptions): Promise<TaskRun>
   
   runningWorkflows.add(runId);
   
+  const aiRun = createRun({
+    id: `ai_${runId}`,
+    run_key: runId,
+    mode: "autonomous",
+    status: "running",
+    goal,
+    agents: ["planner", "coder", "testfixer", "reviewer"],
+    fast_mode: false,
+    created_by_user_id: null
+  });
+  const aiRunId = aiRun.id;
+  
+  emitRunStatus(aiRunId, "running", "Starting autonomous workflow");
+  
   const artifacts = new Map<string, string>();
   let backupId: string | null = null;
   let fixAttempts = 0;
@@ -393,6 +409,7 @@ export async function runAutoWorkflow(options: AutoRunOptions): Promise<TaskRun>
 
   try {
     await runsStorage.updateRunStatus(runId, "running");
+    emitStep(aiRunId, "planner", "Starting autonomous Plan → Code → Test → Review workflow");
 
     const planResult = await executeStep(runId, "plan", goal, artifacts, repoPath);
     if (!planResult.success) {

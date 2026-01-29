@@ -13,6 +13,8 @@ import {
   validateConfirmationToken,
   TrustLimits 
 } from "./patchValidator";
+import { createRun, getRun, getRunByKey } from "./aiDb";
+import { emitRunStatus, emitAgentStatus, emitStep, emitReadFile, emitWriteFile, emitError, emitProposeChangeset, emitNeedsApproval } from "./aiEvents";
 
 const ALLOWED_COMMANDS = new Set(["git", "pytest", "ruff", "mypy", "npm", "node", "python", "python3"]);
 
@@ -85,8 +87,60 @@ export function getPackageJsonScripts(repoPath: string): string[] {
   }
 }
 
+const taskRunMap = new Map<string, string>();
+
+function getOrCreateRunId(taskId: string, mode: TaskMode, goal?: string, agents?: string[], fastMode?: boolean): string {
+  if (taskRunMap.has(taskId)) {
+    return taskRunMap.get(taskId)!;
+  }
+  
+  const existingRun = getRunByKey(taskId);
+  if (existingRun) {
+    taskRunMap.set(taskId, existingRun.id);
+    return existingRun.id;
+  }
+  
+  const modeMap: Record<TaskMode, "plan" | "implement" | "test" | "review" | "verify"> = {
+    plan: "plan",
+    implement: "implement",
+    test: "test",
+    review: "review",
+    verify: "verify"
+  };
+  
+  const run = createRun({
+    id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    run_key: taskId,
+    mode: modeMap[mode] || "implement",
+    status: "queued",
+    goal: goal || null,
+    agents: agents || [mode === "plan" ? "planner" : mode === "review" ? "reviewer" : mode === "test" ? "testfixer" : "coder"],
+    fast_mode: fastMode || false,
+    created_by_user_id: null
+  });
+  
+  taskRunMap.set(taskId, run.id);
+  return run.id;
+}
+
+function getRunIdForTask(taskId: string): string | undefined {
+  return taskRunMap.get(taskId);
+}
+
 function log(taskId: string, message: string) {
   storage.addTaskLog(taskId, message);
+  
+  const runId = getRunIdForTask(taskId);
+  if (runId && message.trim()) {
+    const cleanMsg = message.replace(/^\[INFO\]\s*|\[WARN\]\s*|\[ERROR\]\s*/i, "").trim();
+    if (cleanMsg && !cleanMsg.startsWith("---") && !cleanMsg.startsWith("+++") && !cleanMsg.startsWith("@@")) {
+      if (message.includes("[ERROR]")) {
+        emitError(runId, cleanMsg, "coder");
+      } else if (cleanMsg.length > 5 && cleanMsg.length < 200) {
+        emitStep(runId, "coder", cleanMsg);
+      }
+    }
+  }
 }
 
 function runCommand(cmd: string[], cwd: string): { stdout: string; stderr: string; exitCode: number } {
@@ -164,7 +218,12 @@ function applyDiff(cwd: string, diffContent: string): { success: boolean; error?
 }
 
 async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+  const runId = getOrCreateRunId(task.id, "plan", task.goal, ["planner"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  
+  emitRunStatus(runId, "running", `Starting plan generation (${modeLabel} mode)`);
+  emitAgentStatus(runId, "planner", "working", "Analyzing goal and creating plan");
+  
   log(task.id, `[INFO] Starting plan generation... (${modeLabel} mode)\n`);
   
   const prompt = `You are a senior software architect. Analyze this goal and create a detailed implementation plan.
@@ -234,11 +293,17 @@ Format as JSON with structure:
 }
 
 async function runImplementMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+  const runId = getOrCreateRunId(task.id, "implement", task.goal, ["coder"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  
+  emitRunStatus(runId, "running", `Starting implementation (${modeLabel} mode)`);
+  emitAgentStatus(runId, "coder", "working", "Starting implementation");
+  
   log(task.id, `[INFO] Starting implementation... (${modeLabel} mode)\n`);
   
   const cwd = path.resolve(task.repoPath);
   
+  emitStep(runId, "coder", "Capturing repository snapshot");
   log(task.id, "[INFO] Capturing repository snapshot...\n");
   const targetFiles = extractTargetFilesFromGoal(task.goal, cwd);
   const snapshot = captureRepoSnapshot(cwd, targetFiles);
@@ -342,7 +407,12 @@ Output ONLY the unified diff. No explanations before or after.`;
 }
 
 async function runReviewMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+  const runId = getOrCreateRunId(task.id, "review", task.goal, ["reviewer"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  
+  emitRunStatus(runId, "running", `Starting code review (${modeLabel} mode)`);
+  emitAgentStatus(runId, "reviewer", "working", "Analyzing code for review");
+  
   log(task.id, `[INFO] Starting code review... (${modeLabel} mode)\n`);
   
   const prompt = `You are a senior code reviewer. Review the following goal/changes:
@@ -400,7 +470,12 @@ ${task.goal}
 }
 
 async function runTestMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+  const runId = getOrCreateRunId(task.id, "test", task.goal, ["testfixer"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
+  
+  emitRunStatus(runId, "running", `Running tests (${modeLabel} mode)`);
+  emitAgentStatus(runId, "testfixer", "working", "Running test suite");
+  
   log(task.id, `[INFO] Running tests... (${modeLabel} mode)\n`);
   
   // Try to run pytest if available
