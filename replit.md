@@ -8,14 +8,14 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 - **File Tree**: Browse project files with collapsible folders
 - **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
 - **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
-- **Settings System**: Persistent settings in .simpleide/settings.json with 5 tabs (General, Editor, AI, Integrations, Security)
+- **Settings System**: Persistent settings in .simpleide/settings.json with 4 tabs (General, Editor, APIs, Vault)
 - **Encrypted Secrets Vault**: AES-256-GCM encrypted secrets storage in .simpleide/secrets.enc with master password protection
 - **Integration Testing**: Test Connection buttons for Kaggle, HuggingFace, and NGC integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
 - **AI Agents Panel**: Configure multiple LLM backends and assign roles (Planner, Coder, Reviewer, TestFixer, Doc) with per-role model settings
 - **Terminal Panel**: Collapsible/resizable output panel with 3 states (expanded/collapsed/hidden)
 - **Diff-First Approach**: AI generates diffs that users can review and apply
-- **Ollama Integration**: Uses local Ollama for AI capabilities (with graceful fallback to stubs)
+- **AI Orchestration**: Configurable AI backends via AI Agents panel with role-based routing and fallback
 - **Dark/Light Theme**: Toggle between themes
 - **Keyboard Shortcuts**: Ctrl+S save, Ctrl+J toggle terminal, Ctrl+` show/focus terminal
 
@@ -30,7 +30,7 @@ client/src/
 │   ├── CodeEditor.tsx       # Monaco editor wrapper
 │   ├── DiffViewer.tsx       # Unified diff display
 │   ├── FileTree.tsx         # Project file browser
-│   ├── SettingsModal.tsx    # Settings dialog with 5 tabs
+│   ├── SettingsModal.tsx    # Settings dialog with 4 tabs (General, Editor, APIs, Vault)
 │   ├── TerminalPanel.tsx    # Log output with 3 states
 │   ├── ThemeProvider.tsx    # Dark/light theme context
 │   └── WorkspaceHeader.tsx  # Tab bar (Editor/Preview/AI Agents/etc.)
@@ -186,3 +186,4 @@ The app serves on port 5000 with both frontend and backend.
 - 2026-01-29: Workspace Header - Added Replit-style tab bar with Editor, Preview, Database, Secrets, Console, Shell, Developer tabs
 - 2026-01-29: Terminal improvements - 3 states (expanded/collapsed/hidden), draggable resize, Ctrl+J and Ctrl+` shortcuts, localStorage persistence
 - 2026-01-29: AI Agents - Added AI Agents tab with multi-backend management, role configuration (Planner/Coder/Reviewer/TestFixer/Doc), orchestrator with fallback routing, vault-stored credentials
+- 2026-01-29: Consolidated AI configuration - Removed AI tab from Settings modal, all AI backend config now in AI Agents panel. Settings modal reduced to 4 tabs (General, Editor, APIs, Vault)
