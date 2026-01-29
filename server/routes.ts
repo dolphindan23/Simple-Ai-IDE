@@ -15,6 +15,44 @@ const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 
+const backendHealthCache = new Map<string, { online: boolean; lastChecked: number; error?: string }>();
+const HEALTH_CACHE_TTL_MS = 60 * 1000;
+
+async function checkBackendHealth(backendUrl: string): Promise<{ online: boolean; error?: string }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(`${backendUrl}/api/tags`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeout);
+    return { online: response.ok };
+  } catch (error: any) {
+    return { online: false, error: error.message || "Connection failed" };
+  }
+}
+
+async function getBackendHealthStatus(backendId: string, backendUrl: string, forceRefresh: boolean = false): Promise<{ online: boolean; error?: string }> {
+  const cached = backendHealthCache.get(backendId);
+  const now = Date.now();
+  
+  if (!forceRefresh && cached && (now - cached.lastChecked) < HEALTH_CACHE_TTL_MS) {
+    return { online: cached.online, error: cached.error };
+  }
+  
+  const result = await checkBackendHealth(backendUrl);
+  backendHealthCache.set(backendId, { 
+    online: result.online, 
+    lastChecked: now, 
+    error: result.error 
+  });
+  
+  return result;
+}
+
 function isPathSafe(targetPath: string): boolean {
   const resolved = path.resolve(targetPath);
   const relative = path.relative(PROJECT_ROOT, resolved);
@@ -646,8 +684,8 @@ export async function registerRoutes(
         // Database not available
       }
       
-      // LLM backends status
-      let llmStatus: { online: number; total: number; backends: Array<{ id: string; name: string; online: boolean }> } = {
+      // LLM backends status with real health checks
+      let llmStatus: { online: number; total: number; backends: Array<{ id: string; name: string; online: boolean; lastChecked?: number; error?: string }> } = {
         online: 0,
         total: 0,
         backends: [],
@@ -656,12 +694,23 @@ export async function registerRoutes(
         const settings = readSettings();
         const backends = settings.aiAgents?.backends || [];
         llmStatus.total = backends.length;
-        llmStatus.backends = backends.map((b: any) => ({
-          id: b.id,
-          name: b.name,
-          online: true, // We don't have real health checks yet, assume online if configured
-        }));
-        llmStatus.online = backends.length; // Assume all online for now
+        
+        const healthResults = await Promise.all(
+          backends.map(async (b: any) => {
+            const health = await getBackendHealthStatus(b.id, b.baseUrl);
+            const cached = backendHealthCache.get(b.id);
+            return {
+              id: b.id,
+              name: b.name,
+              online: health.online,
+              lastChecked: cached?.lastChecked,
+              error: health.error,
+            };
+          })
+        );
+        
+        llmStatus.backends = healthResults;
+        llmStatus.online = healthResults.filter(b => b.online).length;
       } catch {
         // No settings
       }
@@ -673,6 +722,12 @@ export async function registerRoutes(
         uptime: process.uptime(),
       };
       
+      // Confirmation token stability check
+      const hasSessionSecret = !!process.env.SESSION_SECRET;
+      const confirmationTokenStatus = hasSessionSecret 
+        ? "stable" 
+        : "unstable (SESSION_SECRET not set - tokens invalid after restart)";
+      
       res.json({
         env: effectiveEnv,
         envDetails: {
@@ -681,6 +736,10 @@ export async function registerRoutes(
           simpleaideEnv,
         },
         server: serverInfo,
+        security: {
+          confirmationTokens: confirmationTokenStatus,
+          sessionSecretSet: hasSessionSecret,
+        },
         runs: {
           active: activeRunCount,
           busy,
@@ -1034,6 +1093,36 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ success: false, error: error.message });
       }
+    }
+  });
+
+  // Refresh health status for all backends (force refresh)
+  app.post("/api/ai-agents/health-refresh", async (req: Request, res: Response) => {
+    try {
+      const settings = readSettings();
+      const backends = settings.aiAgents?.backends || [];
+      
+      const healthResults = await Promise.all(
+        backends.map(async (b: any) => {
+          const health = await getBackendHealthStatus(b.id, b.baseUrl, true);
+          const cached = backendHealthCache.get(b.id);
+          return {
+            id: b.id,
+            name: b.name,
+            online: health.online,
+            lastChecked: cached?.lastChecked,
+            error: health.error,
+          };
+        })
+      );
+      
+      res.json({
+        total: healthResults.length,
+        online: healthResults.filter(b => b.online).length,
+        backends: healthResults,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

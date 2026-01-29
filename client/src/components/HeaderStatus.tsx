@@ -52,7 +52,11 @@ interface StatusResponse {
   llm: {
     online: number;
     total: number;
-    backends: Array<{ id: string; name: string; online: boolean }>;
+    backends: Array<{ id: string; name: string; online: boolean; lastChecked?: number; error?: string }>;
+  };
+  security?: {
+    confirmationTokens: string;
+    sessionSecretSet: boolean;
   };
 }
 
@@ -162,6 +166,11 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
 
   const getLlmTooltip = () => {
     if (status.llm.total === 0) return "No LLM backends configured. Click to add.";
+    const offlineBackends = status.llm.backends.filter(b => !b.online);
+    if (offlineBackends.length > 0) {
+      const offlineNames = offlineBackends.map(b => b.name).join(", ");
+      return `${status.llm.online}/${status.llm.total} backends online. Offline: ${offlineNames}`;
+    }
     return `${status.llm.online}/${status.llm.total} backends online.`;
   };
 

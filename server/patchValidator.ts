@@ -340,16 +340,19 @@ export function extractDiffFromResponse(response: string): string | null {
   let inDiff = false;
   const diffLines: string[] = [];
   
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.startsWith("---")) {
       inDiff = true;
       diffLines.push(line);
     } else if (inDiff) {
       diffLines.push(line);
       
-      if (line.trim() === "" && diffLines.length > 5 && !lines[lines.indexOf(line) + 1]?.startsWith("+") &&
-          !lines[lines.indexOf(line) + 1]?.startsWith("-") && !lines[lines.indexOf(line) + 1]?.startsWith(" ") &&
-          !lines[lines.indexOf(line) + 1]?.startsWith("@@") && !lines[lines.indexOf(line) + 1]?.startsWith("---")) {
+      const nextLine = lines[i + 1];
+      if (line.trim() === "" && diffLines.length > 5 && 
+          !nextLine?.startsWith("+") && !nextLine?.startsWith("-") && 
+          !nextLine?.startsWith(" ") && !nextLine?.startsWith("@@") && 
+          !nextLine?.startsWith("---")) {
       }
     }
   }

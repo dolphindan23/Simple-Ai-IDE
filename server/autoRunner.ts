@@ -3,6 +3,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 import { runsStorage } from "./runs";
 import { ollama } from "./ollama";
+import { validatePatch, formatValidationErrors, type TrustLimits } from "./patchValidator";
 import type { StepType, StepInput, TaskRun } from "@shared/schema";
 
 const MAX_FIX_ATTEMPTS = 3;
@@ -74,11 +75,6 @@ async function createFileBackup(files: string[], backupId: string): Promise<void
       const backupFilePath = path.join(backupPath, safePath);
       ensureDir(path.dirname(backupFilePath));
       fs.copyFileSync(fullPath, backupFilePath);
-      try {
-        fs.chmodSync(backupFilePath, 0o600);
-      } catch {
-        // Ignore chmod errors on some systems
-      }
       safeFiles.push(safePath);
     }
   }
@@ -115,11 +111,6 @@ async function restoreFromBackup(backupId: string): Promise<boolean> {
       if (fs.existsSync(backupFilePath)) {
         ensureDir(path.dirname(originalPath));
         fs.copyFileSync(backupFilePath, originalPath);
-        try {
-          fs.chmodSync(originalPath, 0o600);
-        } catch {
-          // Ignore chmod errors on some systems
-        }
       }
     }
     return true;
@@ -168,7 +159,16 @@ function parseFilesFromDiff(diff: string): ParseDiffResult {
   };
 }
 
-async function applyDiff(diff: string, repoPath: string, runId?: string): Promise<{ success: boolean; error?: string; modifiedFiles?: string[] }> {
+function checkGitAvailable(): boolean {
+  try {
+    execSync("git --version", { encoding: "utf-8", timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function applyDiff(diff: string, repoPath: string, _runId?: string): Promise<{ success: boolean; error?: string; modifiedFiles?: string[] }> {
   if (!isPathSafe(repoPath)) {
     return { success: false, error: "Invalid repository path" };
   }
@@ -186,38 +186,67 @@ async function applyDiff(diff: string, repoPath: string, runId?: string): Promis
     };
   }
   
-  const patchId = runId || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const tempDiffPath = path.join(PROJECT_ROOT, ".simpleaide", `patch_${patchId}.diff`);
+  const validation = validatePatch(diff, fullRepoPath);
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: `Patch validation failed: ${formatValidationErrors(validation)}`
+    };
+  }
+  
+  if (!checkGitAvailable()) {
+    return { 
+      success: false, 
+      error: "Git is required for applying patches. Please install git." 
+    };
+  }
+  
+  const tempFile = path.join(fullRepoPath, ".simpleaide-temp.patch");
   
   try {
-    ensureDir(path.dirname(tempDiffPath));
-    fs.writeFileSync(tempDiffPath, diff, { mode: 0o600 });
+    ensureDir(path.dirname(tempFile));
+    fs.writeFileSync(tempFile, diff);
     
-    execSync(`patch -p1 < "${tempDiffPath}"`, {
-      cwd: fullRepoPath,
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    
-    fs.unlinkSync(tempDiffPath);
-    
-    for (const file of parseResult.files) {
-      const filePath = path.join(fullRepoPath, file);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.chmodSync(filePath, 0o600);
-        } catch {
-          // Ignore chmod errors on some systems
-        }
-      }
+    try {
+      execSync(`git apply --check --whitespace=nowarn "${tempFile}"`, {
+        cwd: fullRepoPath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (checkError: any) {
+      fs.unlinkSync(tempFile);
+      return { 
+        success: false, 
+        error: checkError.stderr || checkError.message || "Patch check failed" 
+      };
     }
     
-    return { success: true, modifiedFiles: parseResult.files };
+    try {
+      execSync(`git apply --whitespace=nowarn "${tempFile}"`, {
+        cwd: fullRepoPath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (applyError: any) {
+      fs.unlinkSync(tempFile);
+      return { 
+        success: false, 
+        error: applyError.stderr || applyError.message || "Patch apply failed" 
+      };
+    }
+    
+    fs.unlinkSync(tempFile);
+    
+    const filesModified = validation.hunks
+      .map(h => h.newPath || h.oldPath)
+      .filter((p): p is string => !!p)
+      .map(p => sanitizePath(p))
+      .filter((p): p is string => !!p);
+    
+    return { success: true, modifiedFiles: Array.from(new Set(filesModified)) };
   } catch (error: any) {
-    if (fs.existsSync(tempDiffPath)) {
-      fs.unlinkSync(tempDiffPath);
-    }
-    return { success: false, error: error.message || "Failed to apply diff" };
+    try { fs.unlinkSync(tempFile); } catch {}
+    return { success: false, error: error.message };
   }
 }
 

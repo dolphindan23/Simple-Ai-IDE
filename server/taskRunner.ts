@@ -126,125 +126,41 @@ function gitSnapshot(cwd: string, message: string): boolean {
 function applyDiff(cwd: string, diffContent: string): { success: boolean; error?: string; filesModified?: string[] } {
   const resolvedCwd = path.resolve(cwd);
   const hunks = parsePatch(diffContent);
-  const filesModified: string[] = [];
   
-  for (const hunk of hunks) {
-    if (hunk.operation === "create" && hunk.newPath) {
-      const targetPath = path.join(resolvedCwd, hunk.newPath);
-      const targetDir = path.dirname(targetPath);
-      
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      
-      const content = extractNewFileContent(diffContent, hunk.newPath);
-      if (content !== null) {
-        fs.writeFileSync(targetPath, content, { mode: 0o644 });
-        filesModified.push(hunk.newPath);
-        continue;
-      }
-    }
-    
-    if (hunk.operation === "delete" && hunk.oldPath) {
-      const targetPath = path.join(resolvedCwd, hunk.oldPath);
-      if (fs.existsSync(targetPath)) {
-        fs.unlinkSync(targetPath);
-        filesModified.push(hunk.oldPath);
-        continue;
-      }
-    }
+  if (!checkGitAvailable()) {
+    return { 
+      success: false, 
+      error: "Git required for patch apply; install git or switch to pure-js apply"
+    };
   }
   
-  const hasModifyHunks = hunks.some(h => h.operation === "modify");
-  if (hasModifyHunks) {
-    if (!checkGitAvailable()) {
-      return { 
-        success: false, 
-        error: "Git required for patch apply; install git or switch to pure-js apply", 
-        filesModified 
-      };
-    }
+  const tempFile = path.join(resolvedCwd, ".simpleaide-temp.patch");
+  
+  try {
+    fs.writeFileSync(tempFile, diffContent);
     
-    const tempFile = path.join(resolvedCwd, ".simpleaide-temp.patch");
-    
-    try {
-      fs.writeFileSync(tempFile, diffContent);
-      
-      const checkResult = runCommand(["git", "apply", "--check", "--whitespace=nowarn", tempFile], resolvedCwd);
-      if (checkResult.exitCode !== 0) {
-        fs.unlinkSync(tempFile);
-        return { success: false, error: checkResult.stderr || "Patch check failed", filesModified };
-      }
-      
-      const applyResult = runCommand(["git", "apply", "--whitespace=nowarn", tempFile], resolvedCwd);
+    const checkResult = runCommand(["git", "apply", "--check", "--whitespace=nowarn", tempFile], resolvedCwd);
+    if (checkResult.exitCode !== 0) {
       fs.unlinkSync(tempFile);
-      
-      if (applyResult.exitCode !== 0) {
-        return { success: false, error: applyResult.stderr || "Patch apply failed", filesModified };
-      }
-      
-      hunks.filter(h => h.operation === "modify").forEach(h => {
-        const p = h.newPath || h.oldPath;
-        if (p) filesModified.push(p);
-      });
-      
-      return { success: true, filesModified };
-    } catch (error: any) {
-      try { fs.unlinkSync(tempFile); } catch {}
-      return { success: false, error: error.message, filesModified };
-    }
-  }
-  
-  return { success: true, filesModified };
-}
-
-function extractNewFileContent(diffContent: string, filePath: string): string | null {
-  const lines = diffContent.split("\n");
-  let inTargetHunk = false;
-  let foundHeader = false;
-  const contentLines: string[] = [];
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    if (line.startsWith("--- /dev/null") || line.startsWith("--- a//dev/null")) {
-      const nextLine = lines[i + 1];
-      if (nextLine && (nextLine.includes(filePath) || nextLine.startsWith("+++ b/"))) {
-        const extractedPath = nextLine.replace(/^\+\+\+\s+b?\//, "").trim();
-        if (extractedPath === filePath || nextLine.includes(filePath)) {
-          inTargetHunk = true;
-          foundHeader = false;
-          i++;
-          continue;
-        }
-      }
+      return { success: false, error: checkResult.stderr || "Patch check failed" };
     }
     
-    if (inTargetHunk) {
-      if (line.startsWith("@@")) {
-        foundHeader = true;
-        continue;
-      }
-      
-      if (foundHeader) {
-        if (line.startsWith("---") || line.startsWith("diff ")) {
-          break;
-        }
-        
-        if (line.startsWith("+")) {
-          contentLines.push(line.slice(1));
-        } else if (line.startsWith(" ")) {
-          contentLines.push(line.slice(1));
-        }
-      }
+    const applyResult = runCommand(["git", "apply", "--whitespace=nowarn", tempFile], resolvedCwd);
+    fs.unlinkSync(tempFile);
+    
+    if (applyResult.exitCode !== 0) {
+      return { success: false, error: applyResult.stderr || "Patch apply failed" };
     }
+    
+    const filesModified = hunks
+      .map(h => h.newPath || h.oldPath)
+      .filter((p): p is string => !!p);
+    
+    return { success: true, filesModified: Array.from(new Set(filesModified)) };
+  } catch (error: any) {
+    try { fs.unlinkSync(tempFile); } catch {}
+    return { success: false, error: error.message };
   }
-  
-  if (contentLines.length > 0) {
-    return contentLines.join("\n");
-  }
-  
-  return null;
 }
 
 async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
