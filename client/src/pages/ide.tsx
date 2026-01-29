@@ -7,7 +7,11 @@ import { TerminalPanel } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { useTheme } from "@/components/ThemeProvider";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, FolderTree, RefreshCw } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sun, Moon, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, TaskMode, Artifact, FileNode, CreateTask } from "@shared/schema";
@@ -19,12 +23,21 @@ export default function IDEPage() {
   // State
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
+  const [originalContent, setOriginalContent] = useState<string>("");
+  const [isDirty, setIsDirty] = useState(false);
   const [goal, setGoal] = useState<string>("Add a /health endpoint and tests");
   const [logs, setLogs] = useState<string[]>([]);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
   const [ollamaModel, setOllamaModel] = useState("codellama");
+  
+  // Dialog states
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [dialogInput, setDialogInput] = useState("");
 
   // Fetch file tree
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
@@ -39,6 +52,8 @@ export default function IDEPage() {
         .then((data) => {
           if (data.content !== undefined) {
             setFileContent(data.content);
+            setOriginalContent(data.content);
+            setIsDirty(false);
           }
         })
         .catch((err) => {
@@ -49,6 +64,148 @@ export default function IDEPage() {
             variant: "destructive",
           });
         });
+    }
+  }, [selectedFile, toast]);
+
+  // Track dirty state when content changes
+  const handleContentChange = useCallback((newContent: string | undefined) => {
+    if (newContent !== undefined) {
+      setFileContent(newContent);
+      setIsDirty(newContent !== originalContent);
+    }
+  }, [originalContent]);
+
+  // Save file mutation
+  const saveFileMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedFile) throw new Error("No file selected");
+      const response = await apiRequest("PUT", "/api/fs/file", {
+        path: selectedFile,
+        content: fileContent,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      setOriginalContent(fileContent);
+      setIsDirty(false);
+      toast({
+        title: "File saved",
+        description: `${selectedFile} saved successfully.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save file",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // New file mutation
+  const newFileMutation = useMutation({
+    mutationFn: async (filePath: string) => {
+      const response = await apiRequest("POST", "/api/fs/new-file", { path: filePath });
+      return response.json();
+    },
+    onSuccess: (_, filePath) => {
+      refetchFiles();
+      setSelectedFile(filePath);
+      toast({ title: "File created", description: `${filePath} created.` });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to create file", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // New folder mutation
+  const newFolderMutation = useMutation({
+    mutationFn: async (folderPath: string) => {
+      const response = await apiRequest("POST", "/api/fs/new-folder", { path: folderPath });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchFiles();
+      toast({ title: "Folder created" });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to create folder", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Rename mutation
+  const renameMutation = useMutation({
+    mutationFn: async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+      const response = await apiRequest("POST", "/api/fs/rename", { oldPath, newPath });
+      return response.json();
+    },
+    onSuccess: (_, { newPath }) => {
+      refetchFiles();
+      setSelectedFile(newPath);
+      toast({ title: "Renamed successfully" });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to rename", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (targetPath: string) => {
+      const response = await apiRequest("POST", "/api/fs/delete", { path: targetPath });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchFiles();
+      setSelectedFile(null);
+      setFileContent("");
+      setOriginalContent("");
+      setIsDirty(false);
+      toast({ title: "Deleted successfully" });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Duplicate mutation
+  const duplicateMutation = useMutation({
+    mutationFn: async (sourcePath: string) => {
+      const response = await apiRequest("POST", "/api/fs/duplicate", { path: sourcePath });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      refetchFiles();
+      if (data.newPath) {
+        setSelectedFile(data.newPath);
+      }
+      toast({ title: "File duplicated" });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to duplicate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (selectedFile && isDirty) {
+          saveFileMutation.mutate();
+        }
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedFile, isDirty, saveFileMutation]);
+
+  // Copy path to clipboard
+  const handleCopyPath = useCallback(() => {
+    if (selectedFile) {
+      navigator.clipboard.writeText(selectedFile);
+      toast({ title: "Path copied to clipboard" });
     }
   }, [selectedFile, toast]);
 
@@ -220,7 +377,84 @@ export default function IDEPage() {
               <FolderTree className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="font-semibold text-sm">SimpleIDE</span>
+            {isDirty && <span className="text-xs text-muted-foreground">(unsaved)</span>}
           </div>
+          
+          {/* File Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" data-testid="button-file-menu">
+                <Menu className="h-4 w-4 mr-1" />
+                File
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem
+                onClick={() => { setDialogInput(""); setShowNewFileDialog(true); }}
+                data-testid="menu-new-file"
+              >
+                <FilePlus className="h-4 w-4 mr-2" />
+                New File
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => { setDialogInput(""); setShowNewFolderDialog(true); }}
+                data-testid="menu-new-folder"
+              >
+                <FolderPlus className="h-4 w-4 mr-2" />
+                New Folder
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => saveFileMutation.mutate()}
+                disabled={!selectedFile || !isDirty || saveFileMutation.isPending}
+                data-testid="menu-save"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save
+                <span className="ml-auto text-xs text-muted-foreground">Ctrl+S</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  if (selectedFile) {
+                    setDialogInput(selectedFile);
+                    setShowRenameDialog(true);
+                  }
+                }}
+                disabled={!selectedFile}
+                data-testid="menu-rename"
+              >
+                <FileEdit className="h-4 w-4 mr-2" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => selectedFile && duplicateMutation.mutate(selectedFile)}
+                disabled={!selectedFile}
+                data-testid="menu-duplicate"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleCopyPath}
+                disabled={!selectedFile}
+                data-testid="menu-copy-path"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Path
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={!selectedFile}
+                className="text-destructive"
+                data-testid="menu-delete"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -245,6 +479,134 @@ export default function IDEPage() {
           </Button>
         </div>
       </header>
+
+      {/* New File Dialog */}
+      <Dialog open={showNewFileDialog} onOpenChange={setShowNewFileDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New File</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="new-file-path">File path</Label>
+            <Input
+              id="new-file-path"
+              value={dialogInput}
+              onChange={(e) => setDialogInput(e.target.value)}
+              placeholder="src/components/NewComponent.tsx"
+              data-testid="input-new-file-path"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewFileDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (dialogInput.trim()) {
+                  newFileMutation.mutate(dialogInput.trim());
+                  setShowNewFileDialog(false);
+                }
+              }}
+              disabled={!dialogInput.trim()}
+              data-testid="button-create-file"
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Folder Dialog */}
+      <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Folder</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="new-folder-path">Folder path</Label>
+            <Input
+              id="new-folder-path"
+              value={dialogInput}
+              onChange={(e) => setDialogInput(e.target.value)}
+              placeholder="src/new-folder"
+              data-testid="input-new-folder-path"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (dialogInput.trim()) {
+                  newFolderMutation.mutate(dialogInput.trim());
+                  setShowNewFolderDialog(false);
+                }
+              }}
+              disabled={!dialogInput.trim()}
+              data-testid="button-create-folder"
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="rename-path">New path</Label>
+            <Input
+              id="rename-path"
+              value={dialogInput}
+              onChange={(e) => setDialogInput(e.target.value)}
+              data-testid="input-rename-path"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (selectedFile && dialogInput.trim() && dialogInput !== selectedFile) {
+                  renameMutation.mutate({ oldPath: selectedFile, newPath: dialogInput.trim() });
+                  setShowRenameDialog(false);
+                }
+              }}
+              disabled={!dialogInput.trim() || dialogInput === selectedFile}
+              data-testid="button-rename"
+            >
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete File</DialogTitle>
+          </DialogHeader>
+          <p className="py-4 text-sm text-muted-foreground">
+            Are you sure you want to delete <strong>{selectedFile}</strong>? This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (selectedFile) {
+                  deleteMutation.mutate(selectedFile);
+                  setShowDeleteDialog(false);
+                }
+              }}
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
@@ -278,7 +640,7 @@ export default function IDEPage() {
                   {selectedFile ? (
                     <CodeEditor
                       value={fileContent}
-                      onChange={setFileContent}
+                      onChange={handleContentChange}
                       path={selectedFile}
                     />
                   ) : (

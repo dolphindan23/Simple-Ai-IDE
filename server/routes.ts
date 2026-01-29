@@ -132,7 +132,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/tasks/:id", async (req: Request, res: Response) => {
-    const task = await storage.getTask(req.params.id);
+    const task = await storage.getTask(req.params.id as string);
     if (!task) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -140,7 +140,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/tasks/:id/events", (req: Request, res: Response) => {
-    const taskId = req.params.id;
+    const taskId = req.params.id as string;
     
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -170,14 +170,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/tasks/:id/diffs", (req: Request, res: Response) => {
-    const taskId = req.params.id;
+    const taskId = req.params.id as string;
     const artifacts = storage.listArtifacts(taskId);
     const diffs = artifacts.filter(name => name.endsWith(".diff"));
     res.json({ diffs });
   });
 
   app.get("/api/tasks/:id/artifact", (req: Request, res: Response) => {
-    const taskId = req.params.id;
+    const taskId = req.params.id as string;
     const name = req.query.name as string;
     
     if (!name) {
@@ -193,7 +193,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/tasks/:id/apply", async (req: Request, res: Response) => {
-    const taskId = req.params.id;
+    const taskId = req.params.id as string;
     const { diffName } = req.body;
     
     if (!diffName) {
@@ -206,6 +206,236 @@ export async function registerRoutes(
       res.json({ success: true, message: "Diff applied successfully" });
     } else {
       res.status(400).json({ success: false, error: result.error });
+    }
+  });
+
+  // ============================================
+  // File System Operations (Phase A)
+  // ============================================
+
+  // Write file content
+  app.put("/api/fs/file", (req: Request, res: Response) => {
+    const { path: filePath, content } = req.body;
+    
+    if (!filePath) {
+      return res.status(400).json({ error: "Path is required" });
+    }
+    if (content === undefined) {
+      return res.status(400).json({ error: "Content is required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullPath = path.resolve(rootDir, filePath);
+    
+    // Security check
+    const relativePath = path.relative(rootDir, fullPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    if (!fullPath.startsWith(rootDir + path.sep) && fullPath !== rootDir) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      fs.writeFileSync(fullPath, content, "utf-8");
+      res.json({ success: true, path: filePath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create new file
+  app.post("/api/fs/new-file", (req: Request, res: Response) => {
+    const { path: filePath, content = "" } = req.body;
+    
+    if (!filePath) {
+      return res.status(400).json({ error: "Path is required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullPath = path.resolve(rootDir, filePath);
+    
+    // Security check
+    const relativePath = path.relative(rootDir, fullPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      if (fs.existsSync(fullPath)) {
+        return res.status(409).json({ error: "File already exists" });
+      }
+      
+      // Ensure parent directory exists
+      const parentDir = path.dirname(fullPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(fullPath, content, "utf-8");
+      res.json({ success: true, path: filePath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create new folder
+  app.post("/api/fs/new-folder", (req: Request, res: Response) => {
+    const { path: folderPath } = req.body;
+    
+    if (!folderPath) {
+      return res.status(400).json({ error: "Path is required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullPath = path.resolve(rootDir, folderPath);
+    
+    // Security check
+    const relativePath = path.relative(rootDir, fullPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      if (fs.existsSync(fullPath)) {
+        return res.status(409).json({ error: "Folder already exists" });
+      }
+      
+      fs.mkdirSync(fullPath, { recursive: true });
+      res.json({ success: true, path: folderPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Rename file or folder
+  app.post("/api/fs/rename", (req: Request, res: Response) => {
+    const { oldPath, newPath } = req.body;
+    
+    if (!oldPath || !newPath) {
+      return res.status(400).json({ error: "Both oldPath and newPath are required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullOldPath = path.resolve(rootDir, oldPath);
+    const fullNewPath = path.resolve(rootDir, newPath);
+    
+    // Security check for both paths
+    const relOld = path.relative(rootDir, fullOldPath);
+    const relNew = path.relative(rootDir, fullNewPath);
+    if (relOld.startsWith("..") || path.isAbsolute(relOld) ||
+        relNew.startsWith("..") || path.isAbsolute(relNew)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      if (!fs.existsSync(fullOldPath)) {
+        return res.status(404).json({ error: "Source path not found" });
+      }
+      if (fs.existsSync(fullNewPath)) {
+        return res.status(409).json({ error: "Destination already exists" });
+      }
+      
+      fs.renameSync(fullOldPath, fullNewPath);
+      res.json({ success: true, oldPath, newPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete file or folder
+  app.post("/api/fs/delete", (req: Request, res: Response) => {
+    const { path: targetPath } = req.body;
+    
+    if (!targetPath) {
+      return res.status(400).json({ error: "Path is required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullPath = path.resolve(rootDir, targetPath);
+    
+    // Security check
+    const relativePath = path.relative(rootDir, fullPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    // Prevent deleting root or critical files
+    if (relativePath === "" || relativePath === ".") {
+      return res.status(403).json({ error: "Cannot delete project root" });
+    }
+    
+    try {
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ error: "Path not found" });
+      }
+      
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        fs.rmSync(fullPath, { recursive: true });
+      } else {
+        fs.unlinkSync(fullPath);
+      }
+      
+      res.json({ success: true, path: targetPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Duplicate file
+  app.post("/api/fs/duplicate", (req: Request, res: Response) => {
+    const { path: sourcePath, newPath } = req.body;
+    
+    if (!sourcePath) {
+      return res.status(400).json({ error: "Source path is required" });
+    }
+    
+    const rootDir = path.resolve(process.cwd());
+    const fullSourcePath = path.resolve(rootDir, sourcePath);
+    
+    // Security check
+    const relSource = path.relative(rootDir, fullSourcePath);
+    if (relSource.startsWith("..") || path.isAbsolute(relSource)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      if (!fs.existsSync(fullSourcePath)) {
+        return res.status(404).json({ error: "Source file not found" });
+      }
+      
+      // Generate new path if not provided
+      let destPath = newPath;
+      if (!destPath) {
+        const ext = path.extname(sourcePath);
+        const base = path.basename(sourcePath, ext);
+        const dir = path.dirname(sourcePath);
+        destPath = path.join(dir, `${base}_copy${ext}`);
+      }
+      
+      const fullDestPath = path.resolve(rootDir, destPath);
+      const relDest = path.relative(rootDir, fullDestPath);
+      if (relDest.startsWith("..") || path.isAbsolute(relDest)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Ensure unique name if destination exists
+      let finalDestPath = fullDestPath;
+      let counter = 1;
+      while (fs.existsSync(finalDestPath)) {
+        const ext = path.extname(destPath);
+        const base = path.basename(destPath, ext);
+        const dir = path.dirname(fullDestPath);
+        finalDestPath = path.join(dir, `${base}_${counter}${ext}`);
+        counter++;
+      }
+      
+      fs.copyFileSync(fullSourcePath, finalDestPath);
+      const finalRelPath = path.relative(rootDir, finalDestPath);
+      res.json({ success: true, sourcePath, newPath: finalRelPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
