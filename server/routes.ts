@@ -1016,11 +1016,15 @@ export async function registerRoutes(
   const MODEL_CATALOG_FILE = path.join(SETTINGS_DIR, "model_catalog.json");
   
   // Model type heuristics based on name patterns
-  function inferModelType(modelName: string): "code" | "general" | "vision" | "embed" | "unknown" {
+  function inferModelType(modelName: string): "code" | "general" | "reasoning" | "vision" | "tool" | "embed" | "unknown" {
     const name = modelName.toLowerCase();
     if (name.includes("embed") || name.includes("embedding")) return "embed";
-    if (name.includes("vision") || name.includes("llava") || name.includes("bakllava")) return "vision";
+    if (name.includes("vision") || name.includes("llava") || name.includes("bakllava") || name.includes("moondream")) return "vision";
     if (name.includes("code") || name.includes("coder") || name.includes("starcoder") || name.includes("deepseek-coder") || name.includes("codellama") || name.includes("qwen2.5-coder")) return "code";
+    // Reasoning/thinking models - often have "think", "reason", or specific architectures
+    if (name.includes("think") || name.includes("reason") || name.includes("o1") || name.includes("deepseek-r1") || name.includes("qwq")) return "reasoning";
+    // Tool-capable/agentic models - often have "func", "tool", or "agent" in name
+    if (name.includes("func") || name.includes("tool") || name.includes("agent") || name.includes("hermes")) return "tool";
     return "general";
   }
   
@@ -1044,7 +1048,7 @@ export async function registerRoutes(
   }
   
   interface ModelCatalogEntry {
-    type?: "code" | "general" | "vision" | "embed";
+    type?: "code" | "general" | "reasoning" | "vision" | "tool" | "embed";
     preference?: "fast" | "balanced" | "accurate";
     defaultNumCtx?: number;
     notes?: string;

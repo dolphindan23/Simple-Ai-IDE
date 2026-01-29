@@ -12,8 +12,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   RefreshCw, Server, AlertCircle, CheckCircle, 
   Cpu, Zap, Scale, Gauge, Hash, Edit2, Save, X, 
-  HelpCircle, Code, Eye, MessageSquare, Database
+  HelpCircle, Code, Eye, MessageSquare, Database, 
+  Brain, Wrench, ChevronDown, ChevronUp, BookOpen
 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface ModelInferred {
   type: string;
@@ -22,7 +24,7 @@ interface ModelInferred {
 }
 
 interface ModelUserTags {
-  type?: "code" | "general" | "vision" | "embed";
+  type?: "code" | "general" | "reasoning" | "vision" | "tool" | "embed";
   preference?: "fast" | "balanced" | "accurate";
   defaultNumCtx?: number;
   notes?: string;
@@ -57,7 +59,9 @@ interface ModelsResponse {
 const TYPE_ICONS: Record<string, any> = {
   code: Code,
   general: MessageSquare,
+  reasoning: Brain,
   vision: Eye,
+  tool: Wrench,
   embed: Database,
   unknown: HelpCircle,
 };
@@ -65,7 +69,9 @@ const TYPE_ICONS: Record<string, any> = {
 const TYPE_COLORS: Record<string, string> = {
   code: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   general: "bg-green-500/20 text-green-400 border-green-500/30",
+  reasoning: "bg-pink-500/20 text-pink-400 border-pink-500/30",
   vision: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  tool: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   embed: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   unknown: "bg-gray-500/20 text-gray-400 border-gray-500/30",
 };
@@ -92,8 +98,8 @@ function formatBytes(bytes?: number): string {
 
 function EducationalTooltip({ concept, children }: { concept: string; children: React.ReactNode }) {
   const explanations: Record<string, string> = {
-    type: "Model Type indicates the primary use case. Code models excel at programming tasks. General models handle diverse conversations. Vision models process images. Embed models create vector representations for search.",
-    size: "Size Class reflects the model's parameter count. Smaller models (1-3B) are faster but less capable. Medium models (7-8B) balance speed and quality. Large models (13B+) offer best quality but require more resources.",
+    type: "Model Type indicates primary use case. Code models excel at syntax and diffs. General models handle planning and conversations. Reasoning models tackle complex multi-step problems. Vision models process images. Tool models excel at structured output and orchestration. Embed models create vector representations.",
+    size: "Size Class reflects parameter count. Smaller models (1-3B) are faster but less capable. Medium models (7-8B) balance speed and quality. Large models (13B+) offer best quality but require more resources.",
     preference: "Speed vs Quality trade-off. Fast models respond quickly with simpler answers. Balanced models offer good quality at moderate speed. Accurate models take longer but provide more nuanced responses.",
     context: "Context Length (num_ctx) determines how much text the model can process at once. Higher values allow longer conversations or larger code files, but use more memory. Common values: 2048 (minimal), 4096 (default), 8192 (large), 32768 (extended).",
     temperature: "Temperature controls response randomness. Lower values (0.1-0.3) produce focused, deterministic outputs ideal for code. Higher values (0.7-1.0) enable creative, varied responses for open-ended tasks.",
@@ -106,6 +112,214 @@ function EducationalTooltip({ concept, children }: { concept: string; children: 
         <p>{explanations[concept] || "Information about this setting."}</p>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+// Comprehensive educational content about model types
+const MODEL_TYPE_INFO = [
+  {
+    type: "code",
+    icon: Code,
+    name: "Code-Tuned",
+    tagline: "Best when the output must compile",
+    strengths: ["Lowest hallucination rate for code", "Strong with diffs and patches", "Good at fixing compiler/test errors"],
+    weaknesses: ["Not great at high-level planning", "May miss intent focusing on syntax"],
+    bestFor: ["Writing code", "Refactoring", "Fixing tests", "Generating patches"],
+  },
+  {
+    type: "general",
+    icon: MessageSquare,
+    name: "General / Chat",
+    tagline: "Best when the output must make sense",
+    strengths: ["Good architectural thinking", "Better explanations", "Strong at 'what should we do?'"],
+    weaknesses: ["Higher chance of code hallucinations", "Less strict about formatting"],
+    bestFor: ["Task breakdown", "Planning", "Code review", "Writing docs"],
+  },
+  {
+    type: "reasoning",
+    icon: Brain,
+    name: "Deep Reasoning",
+    tagline: "Best when the problem is hard, not when the code is long",
+    strengths: ["Best for tricky bugs", "Better at understanding legacy code", "Strong at 'why is this broken?'"],
+    weaknesses: ["Slower responses", "Often worse at raw code formatting"],
+    bestFor: ["Debugging complex issues", "Root-cause analysis", "Reviewing architectural changes"],
+  },
+  {
+    type: "vision",
+    icon: Eye,
+    name: "Vision / Multimodal",
+    tagline: "Best when the input is visual",
+    strengths: ["Understands UI layouts", "Can compare designs to code", "Reads screenshots and diagrams"],
+    weaknesses: ["Usually weaker at pure code writing", "Slower and heavier"],
+    bestFor: ["Screenshot to components", "UI consistency checks", "Design-to-code"],
+  },
+  {
+    type: "tool",
+    icon: Wrench,
+    name: "Tool-Using / Agentic",
+    tagline: "Best when the system is driving the workflow",
+    strengths: ["Reliable orchestration", "Works well with planners", "Follows structured contracts"],
+    weaknesses: ["Often less creative", "Can be verbose or rigid"],
+    bestFor: ["Workflow execution", "Tool calling", "Structured output"],
+  },
+  {
+    type: "embed",
+    icon: Database,
+    name: "Embedding",
+    tagline: "Best for search and similarity",
+    strengths: ["Creates dense vector representations", "Fast similarity search", "Good for RAG systems"],
+    weaknesses: ["Cannot generate text", "Only produces embeddings"],
+    bestFor: ["Semantic search", "Document retrieval", "Similarity matching"],
+  },
+];
+
+const TASK_TO_TYPE_MAP = [
+  { task: "Plan a feature", types: ["general", "reasoning"] },
+  { task: "Generate patch diff", types: ["code"] },
+  { task: "Refactor codebase", types: ["code"] },
+  { task: "Fix failing tests", types: ["code"] },
+  { task: "Debug complex bug", types: ["reasoning"] },
+  { task: "Review a change", types: ["general", "reasoning"] },
+  { task: "Write documentation", types: ["general"] },
+  { task: "Quick rename/format", types: ["code"] },
+  { task: "Understand UI screenshot", types: ["vision"] },
+  { task: "Orchestrate tools", types: ["tool"] },
+];
+
+function ModelGuidePanel() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card className="overflow-hidden">
+        <CollapsibleTrigger asChild>
+          <button 
+            className="w-full p-3 flex items-center justify-between hover-elevate text-left"
+            data-testid="button-toggle-model-guide"
+          >
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">How to Choose a Model</span>
+            </div>
+            {isOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-3 pb-3 space-y-4 border-t pt-3">
+            <p className="text-xs text-muted-foreground">
+              Think of models as tools, not personalities. Each type excels at different tasks.
+              Tags marked with <span className="opacity-60">*</span> have been customized by you.
+            </p>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-medium uppercase text-muted-foreground">Model Types</h4>
+              <div className="grid gap-2">
+                {MODEL_TYPE_INFO.map((info) => {
+                  const Icon = info.icon;
+                  return (
+                    <div 
+                      key={info.type} 
+                      className="p-2 rounded-md bg-muted/30 space-y-1"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[10px] px-1.5 py-0 h-5 ${TYPE_COLORS[info.type]}`}
+                        >
+                          <Icon className="h-2.5 w-2.5 mr-1" />
+                          {info.type}
+                        </Badge>
+                        <span className="text-xs font-medium">{info.name}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground italic">"{info.tagline}"</p>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <div>
+                          <p className="text-[10px] text-green-500/80 font-medium">Strengths:</p>
+                          <ul className="text-[10px] text-muted-foreground list-disc list-inside">
+                            {info.strengths.slice(0, 2).map((s, i) => <li key={i}>{s}</li>)}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-orange-500/80 font-medium">Weaknesses:</p>
+                          <ul className="text-[10px] text-muted-foreground list-disc list-inside">
+                            {info.weaknesses.slice(0, 2).map((w, i) => <li key={i}>{w}</li>)}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium uppercase text-muted-foreground">Task to Model Type</h4>
+              <p className="text-[10px] text-muted-foreground">
+                This is educational guidance, not a rule. You can use any model for any task.
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {TASK_TO_TYPE_MAP.map((item) => (
+                  <div key={item.task} className="flex items-center justify-between text-[10px] py-0.5">
+                    <span className="text-muted-foreground">{item.task}</span>
+                    <div className="flex gap-0.5">
+                      {item.types.map((t) => {
+                        const Icon = TYPE_ICONS[t] || HelpCircle;
+                        return (
+                          <Badge 
+                            key={t}
+                            variant="outline" 
+                            className={`text-[9px] px-1 py-0 h-4 ${TYPE_COLORS[t]}`}
+                          >
+                            <Icon className="h-2 w-2" />
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium uppercase text-muted-foreground">Size vs Speed Tradeoffs</h4>
+              <div className="text-[10px] text-muted-foreground space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[9px] px-1 py-0 h-4 ${SIZE_COLORS.small}`}>
+                    <Zap className="h-2 w-2 mr-0.5" />small
+                  </Badge>
+                  <span>1-3B params: Instant responses, great for quick tasks</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[9px] px-1 py-0 h-4 ${SIZE_COLORS.medium}`}>
+                    <Scale className="h-2 w-2 mr-0.5" />medium
+                  </Badge>
+                  <span>7-8B params: Balance of speed and capability</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[9px] px-1 py-0 h-4 ${SIZE_COLORS.large}`}>
+                    <Gauge className="h-2 w-2 mr-0.5" />large
+                  </Badge>
+                  <span>13B+ params: Better reasoning, more memory needed</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium uppercase text-muted-foreground">Temperature Guide</h4>
+              <div className="text-[10px] text-muted-foreground">
+                <p><strong>Low (0.1-0.3):</strong> Focused, deterministic. Best for code generation.</p>
+                <p><strong>Medium (0.4-0.7):</strong> Balanced creativity and consistency.</p>
+                <p><strong>High (0.8-1.0):</strong> Creative, varied. Best for brainstorming.</p>
+              </div>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }
 
@@ -187,8 +401,10 @@ function ModelCard({
               <SelectContent>
                 <SelectItem value="">Auto-detect</SelectItem>
                 <SelectItem value="code">Code</SelectItem>
-                <SelectItem value="general">General</SelectItem>
+                <SelectItem value="general">General / Chat</SelectItem>
+                <SelectItem value="reasoning">Deep Reasoning</SelectItem>
                 <SelectItem value="vision">Vision</SelectItem>
+                <SelectItem value="tool">Tool-Using</SelectItem>
                 <SelectItem value="embed">Embedding</SelectItem>
               </SelectContent>
             </Select>
@@ -360,26 +576,7 @@ export function ModelCatalog() {
         </Button>
       </div>
 
-      <Card className="p-3 bg-muted/30">
-        <div className="flex items-start gap-2">
-          <HelpCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-          <div className="text-xs text-muted-foreground space-y-1">
-            <p>
-              <strong>Model selection tips:</strong> Choose based on your task requirements.
-            </p>
-            <ul className="list-disc list-inside space-y-0.5 ml-2">
-              <li><strong>Code models</strong> work best for programming tasks</li>
-              <li><strong>Smaller models</strong> respond faster but may be less accurate</li>
-              <li><strong>Larger models</strong> produce better results but need more memory</li>
-              <li>Use <strong>lower temperature</strong> (0.1-0.3) for precise code generation</li>
-              <li>Set <strong>higher context</strong> for longer conversations or large files</li>
-            </ul>
-            <p className="mt-2 opacity-70">
-              Tags marked with * have been customized. Click edit to adjust model settings.
-            </p>
-          </div>
-        </div>
-      </Card>
+      <ModelGuidePanel />
 
       {backends.length === 0 && (
         <Card className="p-6 text-center">
