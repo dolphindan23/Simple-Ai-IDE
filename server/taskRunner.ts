@@ -4,8 +4,11 @@ import type { Task, TaskMode } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync, spawn } from "child_process";
+import { captureRepoSnapshot, formatSnapshotForPrompt, extractTargetFilesFromGoal } from "./repoSnapshot";
+import { validatePatch, extractDiffFromResponse, formatValidationErrors, parsePatch } from "./patchValidator";
 
 const ALLOWED_COMMANDS = new Set(["git", "pytest", "ruff", "mypy", "npm", "node", "python", "python3"]);
+const MAX_TESTFIXER_ATTEMPTS = 3;
 
 function log(taskId: string, message: string) {
   storage.addTaskLog(taskId, message);
@@ -45,32 +48,119 @@ function gitSnapshot(cwd: string, message: string): boolean {
   }
 }
 
-function applyDiff(cwd: string, diffContent: string): { success: boolean; error?: string } {
-  const tempFile = path.join(cwd, ".simpleaide-temp.patch");
+function applyDiff(cwd: string, diffContent: string): { success: boolean; error?: string; filesModified?: string[] } {
+  const hunks = parsePatch(diffContent);
+  const filesModified: string[] = [];
   
-  try {
-    fs.writeFileSync(tempFile, diffContent);
-    
-    // Check if patch applies cleanly
-    const checkResult = runCommand(["git", "apply", "--check", tempFile], cwd);
-    if (checkResult.exitCode !== 0) {
-      fs.unlinkSync(tempFile);
-      return { success: false, error: checkResult.stderr || "Patch check failed" };
+  for (const hunk of hunks) {
+    if (hunk.operation === "create" && hunk.newPath) {
+      const targetPath = path.join(cwd, hunk.newPath);
+      const targetDir = path.dirname(targetPath);
+      
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      const content = extractNewFileContent(diffContent, hunk.newPath);
+      if (content !== null) {
+        fs.writeFileSync(targetPath, content, { mode: 0o644 });
+        filesModified.push(hunk.newPath);
+        continue;
+      }
     }
     
-    // Apply the patch
-    const applyResult = runCommand(["git", "apply", tempFile], cwd);
-    fs.unlinkSync(tempFile);
-    
-    if (applyResult.exitCode !== 0) {
-      return { success: false, error: applyResult.stderr || "Patch apply failed" };
+    if (hunk.operation === "delete" && hunk.oldPath) {
+      const targetPath = path.join(cwd, hunk.oldPath);
+      if (fs.existsSync(targetPath)) {
+        fs.unlinkSync(targetPath);
+        filesModified.push(hunk.oldPath);
+        continue;
+      }
     }
-    
-    return { success: true };
-  } catch (error: any) {
-    try { fs.unlinkSync(tempFile); } catch {}
-    return { success: false, error: error.message };
   }
+  
+  const hasModifyHunks = hunks.some(h => h.operation === "modify");
+  if (hasModifyHunks) {
+    const tempFile = path.join(cwd, ".simpleaide-temp.patch");
+    
+    try {
+      fs.writeFileSync(tempFile, diffContent);
+      
+      const checkResult = runCommand(["git", "apply", "--check", tempFile], cwd);
+      if (checkResult.exitCode !== 0) {
+        fs.unlinkSync(tempFile);
+        return { success: false, error: checkResult.stderr || "Patch check failed", filesModified };
+      }
+      
+      const applyResult = runCommand(["git", "apply", tempFile], cwd);
+      fs.unlinkSync(tempFile);
+      
+      if (applyResult.exitCode !== 0) {
+        return { success: false, error: applyResult.stderr || "Patch apply failed", filesModified };
+      }
+      
+      hunks.filter(h => h.operation === "modify").forEach(h => {
+        const p = h.newPath || h.oldPath;
+        if (p) filesModified.push(p);
+      });
+      
+      return { success: true, filesModified };
+    } catch (error: any) {
+      try { fs.unlinkSync(tempFile); } catch {}
+      return { success: false, error: error.message, filesModified };
+    }
+  }
+  
+  return { success: true, filesModified };
+}
+
+function extractNewFileContent(diffContent: string, filePath: string): string | null {
+  const lines = diffContent.split("\n");
+  let inTargetHunk = false;
+  let foundHeader = false;
+  const contentLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (line.startsWith("--- /dev/null") || line.startsWith("--- a//dev/null")) {
+      const nextLine = lines[i + 1];
+      if (nextLine && (nextLine.includes(filePath) || nextLine.startsWith("+++ b/"))) {
+        const extractedPath = nextLine.replace(/^\+\+\+\s+b?\//, "").trim();
+        if (extractedPath === filePath || nextLine.includes(filePath)) {
+          inTargetHunk = true;
+          foundHeader = false;
+          i++;
+          continue;
+        }
+      }
+    }
+    
+    if (inTargetHunk) {
+      if (line.startsWith("@@")) {
+        foundHeader = true;
+        continue;
+      }
+      
+      if (foundHeader) {
+        if (line.startsWith("---") || line.startsWith("diff ")) {
+          break;
+        }
+        
+        if (line.startsWith("+")) {
+          contentLines.push(line.slice(1));
+        } else if (line.startsWith(" ")) {
+          contentLines.push(line.slice(1));
+        }
+      }
+    }
+  }
+  
+  if (contentLines.length > 0) {
+    return contentLines.join("\n");
+  }
+  
+  return null;
 }
 
 async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
@@ -147,21 +237,55 @@ async function runImplementMode(task: Task, ollama: OllamaAdapter): Promise<void
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   log(task.id, `[INFO] Starting implementation... (${modeLabel} mode)\n`);
   
-  const prompt = `You are an expert programmer. Implement the following:
+  const cwd = path.resolve(task.repoPath);
+  
+  log(task.id, "[INFO] Capturing repository snapshot...\n");
+  const targetFiles = extractTargetFilesFromGoal(task.goal, cwd);
+  const snapshot = captureRepoSnapshot(cwd, targetFiles);
+  const snapshotContext = formatSnapshotForPrompt(snapshot);
+  
+  storage.setArtifact(task.id, "snapshot.txt", snapshotContext);
+  log(task.id, `[INFO] Snapshot captured: ${snapshot.files.length} target files identified\n`);
+  
+  const prompt = `You are an expert programmer working on a codebase. Your task is to generate a unified diff.
 
+${snapshotContext}
+
+=== TASK ===
 Goal: ${task.goal}
 
-Generate a unified diff that can be applied with 'git apply'.
-The diff should be complete and ready to apply.
+=== STRICT OUTPUT FORMAT ===
+You MUST output a single unified diff. Follow these rules exactly:
 
-Output ONLY the unified diff, starting with --- and +++ lines.
-Example format:
---- a/file.py
-+++ b/file.py
-@@ -1,3 +1,5 @@
- existing line
-+new line
- another existing line`;
+1. For EXISTING FILES (modify):
+   --- a/path/to/file.ext
+   +++ b/path/to/file.ext
+   @@ -startLine,count +startLine,count @@
+    context line (space prefix)
+   -removed line (minus prefix)
+   +added line (plus prefix)
+
+2. For NEW FILES (create):
+   --- /dev/null
+   +++ b/path/to/newfile.ext
+   @@ -0,0 +1,lineCount @@
+   +first line of new file
+   +second line
+
+3. For DELETED FILES:
+   --- a/path/to/oldfile.ext
+   +++ /dev/null
+   @@ -1,lineCount +0,0 @@
+   -content being deleted
+
+CONSTRAINTS:
+- Use paths relative to repo root (no leading /)
+- No path traversal (..)
+- No absolute paths
+- Context lines must match exactly
+- Line counts in @@ headers must be accurate
+
+Output ONLY the unified diff. No explanations before or after.`;
 
   try {
     const isAvailable = await ollama.isAvailable();
@@ -188,21 +312,29 @@ Example format:
       process.stdout.write(token);
     });
 
-    // Extract diff from response
-    const diffMatch = response.match(/---[\s\S]*?\+\+\+[\s\S]*/);
-    if (diffMatch) {
-      storage.setArtifact(task.id, "patch_1.diff", diffMatch[0]);
-      log(task.id, "\n[SUCCESS] Implementation diff generated\n");
-    } else {
-      // Save raw response as a diff-like format
-      const rawDiff = `--- a/generated.txt
-+++ b/generated.txt
-@@ -0,0 +1,${response.split('\n').length} @@
-${response.split('\n').map(line => '+' + line).join('\n')}
-`;
-      storage.setArtifact(task.id, "patch_1.diff", rawDiff);
-      log(task.id, "\n[SUCCESS] Implementation saved (raw format)\n");
+    storage.setArtifact(task.id, "raw_response.txt", response);
+    
+    const extractedDiff = extractDiffFromResponse(response);
+    
+    if (!extractedDiff) {
+      log(task.id, "\n[ERROR] No valid diff found in AI response\n");
+      storage.setArtifact(task.id, "patch_1.diff", "");
+      return;
     }
+    
+    log(task.id, "\n[INFO] Validating diff...\n");
+    const validation = validatePatch(extractedDiff, cwd);
+    storage.setArtifact(task.id, "validation.txt", formatValidationErrors(validation));
+    
+    if (!validation.valid) {
+      log(task.id, `[WARN] Diff validation issues:\n${formatValidationErrors(validation)}\n`);
+    } else {
+      log(task.id, `[INFO] Diff validated: ${validation.hunks.length} operations\n`);
+    }
+    
+    storage.setArtifact(task.id, "patch_1.diff", extractedDiff);
+    log(task.id, "[SUCCESS] Implementation diff generated and validated\n");
+    
   } catch (error: any) {
     log(task.id, `[ERROR] Implementation failed: ${error.message}\n`);
     throw error;
