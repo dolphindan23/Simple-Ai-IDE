@@ -6,30 +6,50 @@ This guide covers how to install and run SimpleAide on your local machine.
 
 - **Node.js 20+** (required for native fetch support)
 - **npm** (comes with Node.js)
-- **Git** (optional, for cloning)
+- **Git** (required for patch application in trust hardening system)
+- **Python 3** (required for building native modules)
+- **Build tools** (required for better-sqlite3):
+  - macOS: Xcode Command Line Tools
+  - Linux: `build-essential` (gcc, g++, make)
+  - Windows: Visual Studio Build Tools
 
 ## Quick Start
 
-### 1. Install Node.js 20+
+### 1. Install Prerequisites
 
-**macOS (using Homebrew):**
+**macOS:**
 ```bash
+# Install Xcode Command Line Tools (includes Python, make, git)
+xcode-select --install
+
+# Install Node.js 20+ using Homebrew
 brew install node@20
 ```
 
 **Ubuntu/Debian:**
 ```bash
+# Install build tools, Python, and Git
+sudo apt-get update
+sudo apt-get install -y build-essential python3 git
+
+# Install Node.js 20+
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
 **Windows:**
-Download and install from [nodejs.org](https://nodejs.org/) (LTS version 20+)
+1. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+   - Select "Desktop development with C++" workload
+2. Install [Python 3](https://www.python.org/downloads/) (check "Add to PATH")
+3. Install [Git for Windows](https://git-scm.com/download/win)
+4. Install [Node.js 20+](https://nodejs.org/) (LTS version)
 
 **Verify installation:**
 ```bash
-node --version  # Should show v20.x.x or higher
+node --version   # Should show v20.x.x or higher
 npm --version
+git --version    # Required for patch application
+python3 --version # Or 'python --version' on Windows
 ```
 
 ### 2. Clone or Download the Project
@@ -45,17 +65,66 @@ cd simpleaide
 npm install
 ```
 
+> **Note:** The `better-sqlite3` package requires native compilation. If you encounter build errors, ensure you have the build tools installed (see Prerequisites).
+
 ### 4. Run the Application
 
 ```bash
 npm run dev
 ```
 
-The application will start on **http://localhost:8521**
+The application will start on **http://localhost:5000** (when running on Replit) or **http://localhost:8521** (local development).
+
+You can override the port using the `PORT` environment variable:
+```bash
+PORT=3000 npm run dev
+```
+
+## Project Structure
+
+```
+simpleaide/
+├── client/                 # React frontend (Vite)
+│   ├── src/
+│   │   ├── components/     # UI components
+│   │   ├── hooks/          # React hooks (including SSE for real-time events)
+│   │   ├── pages/          # Page components
+│   │   └── lib/            # Utilities
+│   └── public/             # Static assets
+├── server/                 # Express backend
+│   ├── aiDb.ts             # Agent profiles & run events database
+│   ├── aiEvents.ts         # Real-time event emitter (SSE)
+│   ├── routes.ts           # API endpoints
+│   ├── taskRunner.ts       # AI task execution
+│   ├── autoRunner.ts       # Autonomous workflow engine
+│   ├── patchValidator.ts   # Patch safety validation
+│   └── secrets.ts          # Encrypted secrets vault
+├── shared/                 # Shared TypeScript types
+│   └── schema.ts           # Zod schemas and types
+├── .simpleaide/            # Runtime data directory (auto-created)
+│   ├── settings.json       # User preferences and trust settings
+│   ├── secrets.enc         # Encrypted secrets vault
+│   ├── ai.db               # SQLite database for agent profiles/runs
+│   └── runs/               # Workflow run artifacts
+└── package.json
+```
+
+## Runtime Data Directory (.simpleaide/)
+
+SimpleAide stores all runtime data in the `.simpleaide/` directory:
+
+| File | Description |
+|------|-------------|
+| `settings.json` | User preferences, editor settings, trust limits |
+| `secrets.enc` | AES-256-GCM encrypted secrets vault |
+| `ai.db` | SQLite database for agent profiles, runs, and events |
+| `runs/` | Workflow run artifacts and logs |
+
+This directory is auto-created on first run. Add it to `.gitignore` to avoid committing sensitive data.
 
 ## Docker Installation (Optional)
 
-For containerized deployment, use Docker Compose:
+For containerized deployment:
 
 ### docker-compose.yml
 
@@ -72,6 +141,7 @@ services:
       - simpleaide-data:/app/.simpleaide
     environment:
       - NODE_ENV=production
+      - SIMPLEAIDE_ENV=production
     restart: unless-stopped
 
 volumes:
@@ -83,13 +153,16 @@ volumes:
 ```dockerfile
 FROM node:20-alpine
 
+# Install build dependencies for better-sqlite3
+RUN apk add --no-cache python3 make g++ git
+
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy application code
 COPY . .
@@ -131,7 +204,20 @@ SimpleAide includes an encrypted secrets vault for storing API keys:
    - `HUGGINGFACE_TOKEN` - For HuggingFace integration
    - `NGC_API_KEY` - For NVIDIA NGC integration
 
-The vault uses AES-256-GCM encryption and is stored in `.simpleaide/secrets.enc`
+The vault uses AES-256-GCM encryption with PBKDF2 key derivation.
+
+### Trust Settings
+
+Configure code editing safety limits in Settings > Trust:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Auto-fix enabled | OFF | Allow TestFixer to auto-apply fixes |
+| Max fix attempts | 3 | Maximum retry attempts for TestFixer |
+| Max files per patch | 10 | Block patches affecting too many files |
+| Max lines per patch | 500 | Block patches with too many line changes |
+| Sensitive paths | server/**, .env* | Paths requiring confirmation |
+| Verify allowlist | npm test, etc. | Commands allowed for verification |
 
 ### Ollama (AI Backend)
 
@@ -148,20 +234,58 @@ For AI features, install and configure Ollama:
    ```
 4. Configure in SimpleAide Settings > AI tab
 
+The default Ollama endpoint is `http://localhost:11434`.
+
+### AI Agents
+
+SimpleAide includes 5 specialized AI agents:
+
+| Agent | Role | Description |
+|-------|------|-------------|
+| Planner | 📋 | Plans implementation steps and architecture |
+| Coder | 💻 | Writes and modifies code |
+| Reviewer | 🔍 | Reviews code changes for quality |
+| TestFixer | 🧪 | Runs tests and fixes failures |
+| Doc | 📝 | Generates documentation |
+
+Configure agent settings (model, temperature, context length) in Settings > AI Agents.
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | 5000 (Replit) / 8521 (local) |
+| `NODE_ENV` | Environment mode | development |
+| `SIMPLEAIDE_ENV` | Override environment detection | (uses NODE_ENV) |
+
+### Production Mode
+
+Set `SIMPLEAIDE_ENV=production` (or `prod`) to enable:
+- Read-only database (blocks INSERT/UPDATE/DELETE)
+- Shell access disabled
+- Enhanced security restrictions
+
+```bash
+SIMPLEAIDE_ENV=production npm start
+```
+
 ## Security Notes
 
-- The secrets vault file (`.simpleaide/secrets.enc`) has 0600 permissions (owner read/write only)
+- The secrets vault file (`.simpleaide/secrets.enc`) has 0600 permissions
 - The vault auto-locks after 15 minutes of inactivity (configurable)
-- Never commit `.simpleaide/secrets.enc` to version control
-- Add `.simpleaide/` to your `.gitignore`
+- Never commit `.simpleaide/` to version control
+- Git is required for the trust hardening patch application system
+- Dangerous changes (file deletions, sensitive path edits) require confirmation
 
 ## Troubleshooting
 
-### Port 8521 in use
+### Port already in use
 ```bash
-# Find process using port 8521
-lsof -i :8521
-# Or change port in package.json
+# Find process using the port
+lsof -i :8521  # or :5000
+
+# Kill it or use a different port
+PORT=3000 npm run dev
 ```
 
 ### Node version too old
@@ -171,6 +295,29 @@ nvm install 20
 nvm use 20
 ```
 
+### better-sqlite3 build errors
+```bash
+# Ensure build tools are installed
+# macOS:
+xcode-select --install
+
+# Ubuntu/Debian:
+sudo apt-get install build-essential python3
+
+# Windows: Install Visual Studio Build Tools
+
+# Then rebuild
+npm rebuild better-sqlite3
+```
+
+### Git not found (patch application fails)
+```bash
+# Install Git
+# macOS: xcode-select --install (or brew install git)
+# Ubuntu: sudo apt-get install git
+# Windows: Download from git-scm.com
+```
+
 ### Permissions issues on secrets file
 ```bash
 # Fix permissions (Unix/macOS)
@@ -178,12 +325,23 @@ chmod 600 .simpleaide/secrets.enc
 chmod 700 .simpleaide/
 ```
 
-## Environment Variables
+### SSE connection issues
+If the Activity Timeline doesn't update in real-time:
+- Check browser console for WebSocket/SSE errors
+- The system falls back to polling automatically
+- Ensure `/api/ai/stream` endpoint is accessible
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| PORT | Server port | 8521 |
-| NODE_ENV | Environment mode | development |
+## Building for Production
+
+```bash
+# Build the application
+npm run build
+
+# Start production server
+npm start
+```
+
+The production build outputs to `dist/` and serves static files from `server/public/`.
 
 ## License
 
