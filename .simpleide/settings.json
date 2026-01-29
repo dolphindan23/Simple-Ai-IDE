@@ -28,5 +28,17 @@
     "ngc": {
       "enabled": false
     }
+  },
+  "aiAgents": {
+    "backends": [
+      {
+        "id": "backend_1769678675270",
+        "name": "Test Ollama",
+        "baseUrl": "http://localhost:11434",
+        "authType": "none"
+      }
+    ],
+    "defaultBackendId": "backend_1769678675270",
+    "roles": {}
   }
 }
