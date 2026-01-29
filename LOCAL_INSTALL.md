@@ -258,6 +258,32 @@ Configure agent settings (model, temperature, context length) in Settings > AI A
 | `NODE_ENV` | Environment mode | development |
 | `SIMPLEAIDE_ENV` | Override environment detection | (uses NODE_ENV) |
 
+### Ollama Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Default model name | `codellama` |
+| `OLLAMA_CONNECT_TIMEOUT_MS` | Connection timeout (ms) | `5000` |
+| `OLLAMA_REQUEST_TIMEOUT_MS` | Request timeout for generation (ms) | `300000` (5 min) |
+| `OLLAMA_RETRY_COUNT` | Number of retry attempts | `1` |
+| `OLLAMA_RETRY_BACKOFF_MS` | Backoff between retries (ms) | `250` |
+| `OLLAMA_PROVIDERS_JSON` | JSON array of providers (see below) | (not set) |
+
+#### Multi-Provider Configuration
+
+For headless deployments or multi-GPU setups, use `OLLAMA_PROVIDERS_JSON` to configure multiple Ollama backends:
+
+```bash
+export OLLAMA_PROVIDERS_JSON='[
+  {"id":"coding-fast","url":"http://gpu-serv:11435","defaultModel":"qwen2.5:3b"},
+  {"id":"coding-heavy","url":"http://gpu-serv:11436","defaultModel":"qwen2.5:7b"},
+  {"id":"local","url":"http://127.0.0.1:11434","defaultModel":"codellama"}
+]'
+```
+
+The app will use these providers and make them available for agent role assignments.
+
 ### Production Mode
 
 Set `SIMPLEAIDE_ENV=production` (or `prod`) to enable:
