@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction } from "lucide-react";
+import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction, ChevronLeft, ChevronRight } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
@@ -74,6 +74,10 @@ export default function IDEPage() {
   const [dangerSummary, setDangerSummary] = useState<{ deletedFiles: string[]; sensitiveEdits: string[] } | null>(null);
   const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
   const [pendingDiffName, setPendingDiffName] = useState<string>("");
+  
+  // Sidebar collapse state
+  const [aiTeamCollapsed, setAiTeamCollapsed] = useState(false);
+  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   
   // Persist terminal state
   useEffect(() => {
@@ -836,26 +840,38 @@ export default function IDEPage() {
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          {/* File Tree Panel */}
-          <ResizablePanel defaultSize={15} minSize={10} maxSize={25}>
+          {/* AI Team Panel (moved to left) */}
+          <ResizablePanel defaultSize={aiTeamCollapsed ? 3 : 30} minSize={3} maxSize={40}>
             <div className="h-full flex flex-col bg-sidebar border-r border-sidebar-border">
-              <div className="px-3 py-2 border-b border-sidebar-border">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Explorer
-                </span>
+              <div className="px-3 py-2 border-b border-sidebar-border flex items-center justify-between gap-2">
+                {!aiTeamCollapsed && (
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    AI Team
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  onClick={() => setAiTeamCollapsed(!aiTeamCollapsed)}
+                  data-testid="button-toggle-ai-team-sidebar"
+                >
+                  {aiTeamCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+                </Button>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <FileTree
-                  files={files}
-                  selectedPath={selectedFile}
-                  onSelectFile={handleSelectFile}
-                  onRename={handleRenameFromTree}
-                  onDelete={handleDeleteFromTree}
-                  onCopyPath={handleCopyPath}
-                  onNewFile={handleNewFileInFolder}
-                  onNewFolder={handleNewFolderInFolder}
-                />
-              </div>
+              {!aiTeamCollapsed && (
+                <div className="flex-1 overflow-hidden">
+                  <AITeamPanel
+                    goal={goal}
+                    onGoalChange={setGoal}
+                    onRunTask={handleRunTask}
+                    currentTask={currentTask}
+                    artifacts={artifacts}
+                    onApplyDiff={handleApplyDiff}
+                    isLoading={createTaskMutation.isPending}
+                  />
+                </div>
+              )}
             </div>
           </ResizablePanel>
 
@@ -963,17 +979,40 @@ export default function IDEPage() {
 
           <ResizableHandle />
 
-          {/* AI Team Panel */}
-          <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
-            <AITeamPanel
-              goal={goal}
-              onGoalChange={setGoal}
-              onRunTask={handleRunTask}
-              currentTask={currentTask}
-              artifacts={artifacts}
-              onApplyDiff={handleApplyDiff}
-              isLoading={createTaskMutation.isPending}
-            />
+          {/* Explorer Panel (moved to right) */}
+          <ResizablePanel defaultSize={explorerCollapsed ? 3 : 15} minSize={3} maxSize={25}>
+            <div className="h-full flex flex-col bg-sidebar border-l border-sidebar-border">
+              <div className="px-3 py-2 border-b border-sidebar-border flex items-center justify-between gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  onClick={() => setExplorerCollapsed(!explorerCollapsed)}
+                  data-testid="button-toggle-explorer-sidebar"
+                >
+                  {explorerCollapsed ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                </Button>
+                {!explorerCollapsed && (
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Explorer
+                  </span>
+                )}
+              </div>
+              {!explorerCollapsed && (
+                <div className="flex-1 overflow-hidden">
+                  <FileTree
+                    files={files}
+                    selectedPath={selectedFile}
+                    onSelectFile={handleSelectFile}
+                    onRename={handleRenameFromTree}
+                    onDelete={handleDeleteFromTree}
+                    onCopyPath={handleCopyPath}
+                    onNewFile={handleNewFileInFolder}
+                    onNewFolder={handleNewFolderInFolder}
+                  />
+                </div>
+              )}
+            </div>
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
