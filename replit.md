@@ -5,7 +5,9 @@ SimpleIDE is a minimal, Replit-style coding workspace with an AI-powered multi-a
 
 ## Key Features
 - **File Tree**: Browse project files with collapsible folders
-- **Monaco Editor**: Professional code editing with syntax highlighting and IntelliSense
+- **Monaco Editor**: Professional code editing with syntax highlighting, IntelliSense, and full editing support
+- **File Operations**: Save (Ctrl+S), New File, New Folder, Rename, Delete, Duplicate, Copy Path via File menu
+- **Settings System**: Persistent settings in .simpleide/settings.json with tabs for General, Editor, AI, and Integrations
 - **AI Team Panel**: Execute AI tasks (Plan, Implement, Test, Review)
 - **Terminal Panel**: View real-time task logs via SSE streaming
 - **Diff-First Approach**: AI generates diffs that users can review and apply
@@ -56,6 +58,15 @@ shared/
 | GET | /api/tasks/:id/diffs | List generated diffs |
 | GET | /api/tasks/:id/artifact | Get artifact content |
 | POST | /api/tasks/:id/apply | Apply a diff to the project |
+| PUT | /api/fs/file | Write file content |
+| POST | /api/fs/new-file | Create new file |
+| POST | /api/fs/new-folder | Create new folder |
+| POST | /api/fs/rename | Rename file or folder |
+| POST | /api/fs/delete | Delete file or folder |
+| POST | /api/fs/duplicate | Duplicate file |
+| GET | /api/settings | Get settings from .simpleide/settings.json |
+| PUT | /api/settings | Save all settings |
+| PATCH | /api/settings/:section | Update specific settings section |
 
 ## Task Modes
 
@@ -100,3 +111,5 @@ The app serves on port 5000 with both frontend and backend.
 
 ## Recent Changes
 - 2026-01-29: Initial MVP with file tree, Monaco editor, AI Team panel, and Ollama integration
+- 2026-01-29: Phase A - Added full file editing capabilities with dirty state tracking, Ctrl+S save, and File menu (New File, New Folder, Rename, Delete, Duplicate, Copy Path)
+- 2026-01-29: Phase B - Added Settings modal with 4 tabs (General, Editor, AI, Integrations), persisted to .simpleide/settings.json

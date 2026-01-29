@@ -5,6 +5,7 @@ import { runTask, applyTaskDiff } from "./taskRunner";
 import { createTaskSchema, settingsSchema, defaultSettings, type Settings } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
+import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret } from "./secrets";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleide");
@@ -508,6 +509,151 @@ export async function registerRoutes(
       res.json({ success: true, settings: validated });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // Secrets Vault API (Phase C)
+  // ============================================
+  
+  // In-memory storage for the unlocked vault session
+  let currentVault: any = null;
+  let currentMasterPassword: string | null = null;
+
+  // Check if vault exists
+  app.get("/api/secrets/status", (req: Request, res: Response) => {
+    res.json({
+      exists: vaultExists(),
+      unlocked: currentVault !== null,
+    });
+  });
+
+  // Create vault
+  app.post("/api/secrets/create", (req: Request, res: Response) => {
+    try {
+      const { masterPassword } = req.body;
+      
+      if (!masterPassword || masterPassword.length < 8) {
+        return res.status(400).json({ error: "Master password must be at least 8 characters" });
+      }
+      
+      if (vaultExists()) {
+        return res.status(400).json({ error: "Vault already exists" });
+      }
+      
+      createVault(masterPassword);
+      currentVault = unlockVault(masterPassword);
+      currentMasterPassword = masterPassword;
+      
+      res.json({ success: true, message: "Vault created and unlocked" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Unlock vault
+  app.post("/api/secrets/unlock", (req: Request, res: Response) => {
+    try {
+      const { masterPassword } = req.body;
+      
+      if (!masterPassword) {
+        return res.status(400).json({ error: "Master password is required" });
+      }
+      
+      const vault = unlockVault(masterPassword);
+      
+      if (!vault) {
+        return res.status(401).json({ error: "Invalid master password or vault not found" });
+      }
+      
+      currentVault = vault;
+      currentMasterPassword = masterPassword;
+      
+      res.json({ success: true, message: "Vault unlocked" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Lock vault
+  app.post("/api/secrets/lock", (req: Request, res: Response) => {
+    currentVault = null;
+    currentMasterPassword = null;
+    res.json({ success: true, message: "Vault locked" });
+  });
+
+  // List secrets (masked values)
+  app.get("/api/secrets", (req: Request, res: Response) => {
+    if (!currentVault) {
+      return res.status(401).json({ error: "Vault is locked" });
+    }
+    
+    const keys = listSecretKeys(currentVault);
+    const secrets = keys.map(key => ({
+      key,
+      maskedValue: maskSecret(currentVault.secrets[key]),
+    }));
+    
+    res.json({ secrets });
+  });
+
+  // Get single secret (masked)
+  app.get("/api/secrets/:key", (req: Request, res: Response) => {
+    if (!currentVault) {
+      return res.status(401).json({ error: "Vault is locked" });
+    }
+    
+    const key = req.params.key as string;
+    const value = currentVault.secrets[key];
+    
+    if (!value) {
+      return res.status(404).json({ error: "Secret not found" });
+    }
+    
+    res.json({ key, maskedValue: maskSecret(value) });
+  });
+
+  // Set secret
+  app.put("/api/secrets/:key", (req: Request, res: Response) => {
+    if (!currentVault || !currentMasterPassword) {
+      return res.status(401).json({ error: "Vault is locked" });
+    }
+    
+    try {
+      const key = req.params.key as string;
+      const { value } = req.body;
+      
+      if (!value) {
+        return res.status(400).json({ error: "Value is required" });
+      }
+      
+      setSecret(currentVault, key, value);
+      saveVault(currentVault, currentMasterPassword);
+      
+      res.json({ success: true, key, maskedValue: maskSecret(value) });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete secret
+  app.delete("/api/secrets/:key", (req: Request, res: Response) => {
+    if (!currentVault || !currentMasterPassword) {
+      return res.status(401).json({ error: "Vault is locked" });
+    }
+    
+    try {
+      const key = req.params.key as string;
+      const deleted = deleteSecret(currentVault, key);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Secret not found" });
+      }
+      
+      saveVault(currentVault, currentMasterPassword);
+      res.json({ success: true, message: `Secret '${key}' deleted` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
