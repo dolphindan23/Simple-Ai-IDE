@@ -8,6 +8,15 @@ SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-
 - JetBrains Mono font for code
 - Diff-first workflow (agents propose changes, users apply)
 
+## Recent Changes (January 2026)
+- **Settings Modal AI Tab**: Added 4th tab for AI defaults (action, speed, diff preview, confirm destructive)
+- **Context Manager Drawer**: Visualize/manage AI file context with pin/search/clear functionality
+- **Keyboard Shortcuts Modal**: Displays all keybindings organized by category (General, Editor, Panels, AI)
+- **File Menu Cleanup**: Removed Duplicate, added Settings/Reload Window/Reset Layout/Shortcuts items
+- **Right-click Context Menu**: FileTree nodes support context menu matching hover actions
+- **Breadcrumbs Bar**: Shows current file path above Monaco editor with clickable segments
+- **Theme Support**: Added "terminal-noir" theme option to generalSettingsSchema
+
 ## System Architecture
 
 ### Frontend (React + TypeScript)
