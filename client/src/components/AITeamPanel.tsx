@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, ChevronUp, Zap, Target, Clock, Eye, Users, Activity, Minus } from "lucide-react";
+import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, ChevronUp, Zap, Target, Clock, Eye, Users, Activity, Minus, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import type { Task, TaskMode, Artifact } from "@shared/schema";
 import { useAIRunEvents } from "@/hooks/useAIRunEvents";
 import { AgentRoster } from "@/components/AgentRosterCard";
 import { ActivityTimeline, CompactActivityFeed } from "@/components/ActivityTimeline";
+import { TemplatesPanel } from "@/components/TemplatesPanel";
 
 interface AITeamPanelProps {
   goal: string;
@@ -25,6 +26,7 @@ interface AITeamPanelProps {
   artifacts: Artifact[];
   onApplyDiff: (diffName: string) => void;
   isLoading: boolean;
+  projectId?: string | null;
 }
 
 function formatLatency(ms?: number): string {
@@ -214,6 +216,7 @@ export function AITeamPanel({
   artifacts,
   onApplyDiff,
   isLoading,
+  projectId,
 }: AITeamPanelProps) {
   const [accurateMode, setAccurateMode] = useState(false);
   const [agentActivityMinimized, setAgentActivityMinimized] = useState(false);
@@ -439,13 +442,14 @@ export function AITeamPanel({
 
       <AgentVisibilitySection 
         isMinimized={agentActivityMinimized} 
-        onToggleMinimize={() => setAgentActivityMinimized(!agentActivityMinimized)} 
+        onToggleMinimize={() => setAgentActivityMinimized(!agentActivityMinimized)}
+        projectId={projectId || null}
       />
     </div>
   );
 }
 
-function AgentVisibilitySection({ isMinimized, onToggleMinimize }: { isMinimized: boolean; onToggleMinimize: () => void }) {
+function AgentVisibilitySection({ isMinimized, onToggleMinimize, projectId }: { isMinimized: boolean; onToggleMinimize: () => void; projectId: string | null }) {
   const { events, agentProfiles, isConnected } = useAIRunEvents();
   const [activeTab, setActiveTab] = useState<string>("activity");
 
@@ -485,7 +489,7 @@ function AgentVisibilitySection({ isMinimized, onToggleMinimize }: { isMinimized
       {!isMinimized && (
         <div className="px-4 pb-4">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="w-full grid grid-cols-2 h-8">
+            <TabsList className="w-full grid grid-cols-3 h-8">
               <TabsTrigger value="activity" className="text-xs gap-1" data-testid="tab-activity">
                 <Activity className="h-3 w-3" />
                 Timeline
@@ -493,6 +497,10 @@ function AgentVisibilitySection({ isMinimized, onToggleMinimize }: { isMinimized
               <TabsTrigger value="agents" className="text-xs gap-1" data-testid="tab-agents">
                 <Users className="h-3 w-3" />
                 Agents
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="text-xs gap-1" data-testid="tab-templates">
+                <Package className="h-3 w-3" />
+                Templates
               </TabsTrigger>
             </TabsList>
 
@@ -519,6 +527,12 @@ function AgentVisibilitySection({ isMinimized, onToggleMinimize }: { isMinimized
                     Loading agents...
                   </div>
                 )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="templates" className="mt-2">
+              <div className="h-48 border rounded-md bg-background/50">
+                <TemplatesPanel projectId={projectId || null} compact />
               </div>
             </TabsContent>
           </Tabs>

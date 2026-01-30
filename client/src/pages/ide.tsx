@@ -204,6 +204,11 @@ export default function IDEPage() {
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
     queryKey: ["/api/files"],
   });
+  
+  const { data: projectsData } = useQuery<{ projects: { id: string; name: string }[]; activeProjectId: string | null }>({
+    queryKey: ["/api/projects"],
+  });
+  const activeProjectId = projectsData?.activeProjectId || null;
 
   // Fetch file content when a file is selected
   useEffect(() => {
@@ -1005,6 +1010,7 @@ export default function IDEPage() {
                     artifacts={artifacts}
                     onApplyDiff={handleApplyDiff}
                     isLoading={createTaskMutation.isPending}
+                    projectId={activeProjectId}
                   />
                 </div>
               )}
