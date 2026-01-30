@@ -176,6 +176,10 @@ cp .env.docker.example .env.docker
 
 2. **Start the stack:**
 ```bash
+# Option A: Use the convenience script
+./docker_start_all.sh
+
+# Option B: Manual command
 docker compose -f docker-compose.gpu.yml up -d --build
 ```
 
@@ -224,10 +228,15 @@ For multiple Ollama instances (one per GPU), duplicate the `ollama` service with
 #### Stop the Stack
 
 ```bash
+# Option A: Use the convenience script
+./docker_stop_all.sh
+
+# Option B: Manual command
 docker compose -f docker-compose.gpu.yml down
 
 # To also remove volumes (data will be lost):
-docker compose -f docker-compose.gpu.yml down -v
+./docker_stop_all.sh --clean
+# or: docker compose -f docker-compose.gpu.yml down -v
 ```
 
 ### docker-compose.gpu.yml Reference
