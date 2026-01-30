@@ -13,7 +13,11 @@
     "fontFamily": "JetBrains Mono, monospace"
   },
   "ai": {
-    "autoSave": true
+    "autoSave": true,
+    "defaultAction": "plan",
+    "defaultSpeed": "fast",
+    "showDiffBeforeApply": true,
+    "confirmDestructiveChanges": true
   },
   "integrations": {
     "kaggle": {
@@ -28,12 +32,6 @@
   },
   "aiAgents": {
     "backends": [
-      {
-        "id": "backend_1769692276258",
-        "name": "DGX Local",
-        "baseUrl": "https://192.168.8.227:11434",
-        "authType": "none"
-      },
       {
         "id": "backend_1769697428667",
         "name": "croptech",
@@ -59,7 +57,7 @@
         "authType": "none"
       }
     ],
-    "defaultBackendId": "backend_1769692276258",
+    "defaultBackendId": "backend_1769697428667",
     "roles": {}
   },
   "trust": {
