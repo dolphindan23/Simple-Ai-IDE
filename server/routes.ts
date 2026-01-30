@@ -41,7 +41,7 @@ import { templateToolDefinitions, dispatchTemplateTool } from "./simpleaide/tool
 import { cloneRepository, pullRepository, getGitOpStatus, getGitOpLogTail } from "./simpleaide/git/gitWorker";
 import { bootstrapProject } from "./simpleaide/git/bootstrap";
 import { validateRemoteUrl } from "./simpleaide/git/gitUrl";
-import { listGitOps, getProjectRemote, getGitOp, createGitOp } from "./simpleaide/db";
+import { listGitOps, getProjectRemote, getGitOp, createGitOp, updateGitOp } from "./simpleaide/db";
 import { generateOpId } from "./simpleaide/git/gitWorker";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
@@ -3225,10 +3225,14 @@ export async function registerRoutes(
           });
           
           if (cloneResult.success && cloneResult.projectPath) {
+            updateGitOp(gitOpId, { stage: "bootstrap_start" });
             const stack = bootstrapProject(cloneResult.projectPath);
+            updateGitOp(gitOpId, { stage: "bootstrap_done" });
             
             try {
+              updateGitOp(gitOpId, { stage: "index_build_start" });
               await buildIndex(projectId, cloneResult.projectPath);
+              updateGitOp(gitOpId, { stage: "index_build_done" });
             } catch (e) {
               console.error(`[git-import] Index build failed for ${projectId}:`, e);
             }

@@ -15,7 +15,6 @@ import {
 
 const PROJECTS_ROOT = path.join(process.cwd(), "projects");
 const STAGING_ROOT = path.join(PROJECTS_ROOT, ".staging");
-const LOGS_ROOT = path.join(process.cwd(), ".simpleaide", "git-logs");
 
 export interface CloneOptions {
   projectId: string;
@@ -60,9 +59,16 @@ export function generateOpId(): string {
   return `gitop_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-function getLogPath(opId: string): string {
-  ensureDir(LOGS_ROOT);
-  return path.join(LOGS_ROOT, `${opId}.log`);
+function getLogPath(projectId: string, opId: string): string {
+  const projectGitLogsDir = path.join(PROJECTS_ROOT, projectId, ".simpleaide", "git");
+  ensureDir(projectGitLogsDir);
+  return path.join(projectGitLogsDir, `${opId}.log`);
+}
+
+function getLegacyLogPath(opId: string): string {
+  const legacyDir = path.join(process.cwd(), ".simpleaide", "git-logs");
+  ensureDir(legacyDir);
+  return path.join(legacyDir, `${opId}.log`);
 }
 
 function appendLog(logPath: string, message: string): void {
@@ -85,7 +91,7 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
   }
   
   const opId = providedOpId || generateOpId();
-  const logPath = getLogPath(opId);
+  const logPath = getLegacyLogPath(opId);
   
   if (!providedOpId) {
     createGitOp({ id: opId, project_id: projectId, op: "clone" });
@@ -94,7 +100,7 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
   appendLog(logPath, `URL: ${validated.sanitizedUrl}`);
   appendLog(logPath, `Provider: ${validated.provider}`);
   
-  updateGitOp(opId, { status: "running", started_at: new Date().toISOString(), log_path: logPath });
+  updateGitOp(opId, { status: "running", stage: "validate_url", started_at: new Date().toISOString(), log_path: logPath });
   
   ensureDir(STAGING_ROOT);
   const stagingDir = path.join(STAGING_ROOT, `${projectId}_${Date.now()}`);
@@ -130,6 +136,7 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
     cloneArgs.push(validated.sanitizedUrl, repoDir);
     
     appendLog(logPath, `Clone command: git ${cloneArgs.join(" ")}`);
+    updateGitOp(opId, { stage: "clone_start" });
     
     let result: ExecGitResult;
     try {
@@ -168,6 +175,7 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
       return { success: false, gitOpId: opId, error: errorMsg, logPath };
     }
     appendLog(logPath, `HEAD: ${verifyResult.stdout.trim()}`);
+    updateGitOp(opId, { stage: "clone_done" });
     
     ensureDir(PROJECTS_ROOT);
     finalPath = path.join(PROJECTS_ROOT, projectId);
@@ -211,13 +219,13 @@ export async function pullRepository(options: PullOptions): Promise<PullResult> 
   const { projectId, projectPath, pat } = options;
   
   const opId = generateOpId();
-  const logPath = getLogPath(opId);
+  const logPath = getLogPath(projectId, opId);
   
   createGitOp({ id: opId, project_id: projectId, op: "pull" });
   appendLog(logPath, `Starting pull for project: ${projectId}`);
   appendLog(logPath, `Path: ${projectPath}`);
   
-  updateGitOp(opId, { status: "running", started_at: new Date().toISOString(), log_path: logPath });
+  updateGitOp(opId, { status: "running", stage: "fetch_start", started_at: new Date().toISOString(), log_path: logPath });
   
   const fetchResult = await execGit(["fetch", "--prune"], { cwd: projectPath, pat, timeoutMs: 2 * 60 * 1000 });
   appendLog(logPath, `Fetch exit code: ${fetchResult.exitCode}`);
@@ -229,6 +237,7 @@ export async function pullRepository(options: PullOptions): Promise<PullResult> 
     return { success: false, gitOpId: opId, error: errorMsg, logPath };
   }
   
+  updateGitOp(opId, { stage: "pull_start" });
   const pullResult = await execGit(["pull", "--ff-only"], { cwd: projectPath, pat, timeoutMs: 2 * 60 * 1000 });
   appendLog(logPath, `Pull exit code: ${pullResult.exitCode}`);
   if (pullResult.stdout) appendLog(logPath, `Pull stdout: ${pullResult.stdout}`);
@@ -244,7 +253,7 @@ export async function pullRepository(options: PullOptions): Promise<PullResult> 
   }
   
   updateProjectRemoteLastFetched(projectId);
-  updateGitOp(opId, { status: "succeeded", ended_at: new Date().toISOString() });
+  updateGitOp(opId, { status: "succeeded", stage: "pull_done", ended_at: new Date().toISOString() });
   appendLog(logPath, "Pull completed successfully");
   
   return { success: true, gitOpId: opId, logPath };

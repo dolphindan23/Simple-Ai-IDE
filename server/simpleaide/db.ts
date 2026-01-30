@@ -85,6 +85,7 @@ function initializeTables(db: Database.Database): void {
       project_id TEXT NOT NULL,
       op TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
+      stage TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       started_at TEXT,
       ended_at TEXT,
@@ -107,6 +108,13 @@ function initializeTables(db: Database.Database): void {
   }
   if (!existingColumns.has("template_apply_json")) {
     db.exec("ALTER TABLE agent_runs ADD COLUMN template_apply_json TEXT");
+  }
+  
+  const gitOpsInfo = db.prepare("PRAGMA table_info(project_git_ops)").all() as { name: string }[];
+  const gitOpsColumns = new Set(gitOpsInfo.map(c => c.name));
+  
+  if (!gitOpsColumns.has("stage")) {
+    db.exec("ALTER TABLE project_git_ops ADD COLUMN stage TEXT");
   }
 }
 
@@ -341,11 +349,24 @@ export function updateProjectRemoteLastFetched(projectId: string): void {
 export type GitOpType = "clone" | "pull" | "checkout" | "submodule_update";
 export type GitOpStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type GitOpStage = 
+  | "validate_url"
+  | "clone_start"
+  | "clone_done"
+  | "bootstrap_start"
+  | "bootstrap_done"
+  | "index_build_start"
+  | "index_build_done"
+  | "fetch_start"
+  | "pull_start"
+  | "pull_done";
+
 export interface ProjectGitOp {
   id: string;
   project_id: string;
   op: GitOpType;
   status: GitOpStatus;
+  stage?: GitOpStage | null;
   created_at?: string;
   started_at?: string | null;
   ended_at?: string | null;
@@ -380,7 +401,7 @@ export function listGitOps(projectId: string, limit = 20): ProjectGitOp[] {
   return stmt.all(projectId, limit) as ProjectGitOp[];
 }
 
-export function updateGitOp(opId: string, updates: Partial<Pick<ProjectGitOp, "status" | "started_at" | "ended_at" | "log_path" | "error">>): void {
+export function updateGitOp(opId: string, updates: Partial<Pick<ProjectGitOp, "status" | "stage" | "started_at" | "ended_at" | "log_path" | "error">>): void {
   const db = getCapsulesDb();
   const fields: string[] = [];
   const values: any[] = [];
@@ -388,6 +409,10 @@ export function updateGitOp(opId: string, updates: Partial<Pick<ProjectGitOp, "s
   if (updates.status !== undefined) {
     fields.push("status = ?");
     values.push(updates.status);
+  }
+  if (updates.stage !== undefined) {
+    fields.push("stage = ?");
+    values.push(updates.stage);
   }
   if (updates.started_at !== undefined) {
     fields.push("started_at = ?");
