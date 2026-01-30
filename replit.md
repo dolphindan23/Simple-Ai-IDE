@@ -16,7 +16,7 @@ SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-
 - **File Menu Cleanup**: Removed Duplicate, added Settings/Reload Window/Reset Layout/Shortcuts items
 - **Right-click Context Menu**: FileTree nodes support context menu matching hover actions
 - **Breadcrumbs Bar**: Shows current file path above Monaco editor with clickable segments
-- **Theme Support**: Added "terminal-noir" theme option to generalSettingsSchema
+- **Theme Support**: Four themes available - light, dark, terminal-noir, and alpha-terminal (cyberpunk with cyan/magenta/acid green neon accents)
 - **Docker GPU Deployment**: Added Dockerfile, docker-compose.gpu.yml, and .env.docker.example for containerized deployment with GPU-enabled Ollama
 
 ## System Architecture
