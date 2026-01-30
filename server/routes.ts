@@ -13,6 +13,7 @@ import { setupShellWebSocket, getActiveSessions as getActiveShellSessions } from
 import * as aiDb from "./aiDb";
 import { subscribeToRun, subscribeToAllRuns, emitRunStatus, emitAgentStatus, emitStep } from "./aiEvents";
 import { randomUUID } from "crypto";
+import { nanoid } from "nanoid";
 import { loadProjectConfig, initDefaultConfigs } from "./simpleaide/config";
 import { 
   getCapsulesDb, 
@@ -37,6 +38,10 @@ import { listTemplates, loadTemplate, validateTemplate } from "./simpleaide/temp
 import { applyTemplateInCapsule } from "./simpleaide/templates/apply";
 import { readCapabilities } from "./simpleaide/capabilities";
 import { templateToolDefinitions, dispatchTemplateTool } from "./simpleaide/tools";
+import { cloneRepository, pullRepository, getGitOpStatus, getGitOpLogTail } from "./simpleaide/git/gitWorker";
+import { bootstrapProject } from "./simpleaide/git/bootstrap";
+import { validateRemoteUrl } from "./simpleaide/git/gitUrl";
+import { listGitOps, getProjectRemote, getGitOp } from "./simpleaide/db";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -3135,6 +3140,228 @@ export async function registerRoutes(
       }
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/import/git", async (req: Request, res: Response) => {
+    try {
+      const { name, git, auth, options = {}, bootstrap: bootstrapOpts = {} } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      if (!git?.url) {
+        return res.status(400).json({ error: "git.url is required" });
+      }
+      
+      try {
+        validateRemoteUrl(git.url);
+      } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+      }
+      
+      const projectId = `${name.toLowerCase().replace(/[^a-z0-9-]/g, "-")}-${nanoid(8)}`;
+      
+      let pat: string | undefined;
+      if (auth?.type === "pat" && auth.secretKey) {
+        const secrets = getSecrets();
+        pat = secrets[auth.secretKey];
+        if (!pat) {
+          return res.status(400).json({ error: `Secret ${auth.secretKey} not found` });
+        }
+      }
+      
+      res.status(202).json({
+        ok: true,
+        data: {
+          projectId,
+          status: "queued",
+          message: "Clone operation started. Poll /api/v1/projects/:projectId/git/ops for status."
+        }
+      });
+      
+      (async () => {
+        try {
+          const cloneResult = await cloneRepository({
+            projectId,
+            projectName: name,
+            url: git.url,
+            branch: git.branch,
+            authRef: auth?.secretKey,
+            pat,
+            depth: options.depth ?? 1,
+            recurseSubmodules: options.recurseSubmodules ?? true,
+          });
+          
+          if (cloneResult.success && cloneResult.projectPath) {
+            const stack = bootstrapProject(cloneResult.projectPath);
+            
+            try {
+              await buildIndex(projectId, cloneResult.projectPath);
+            } catch (e) {
+              console.error(`[git-import] Index build failed for ${projectId}:`, e);
+            }
+            
+            const projectsFile = path.join(PROJECTS_DIR, "projects.json");
+            let projectsData: any = { projects: [], activeProjectId: null };
+            if (fs.existsSync(projectsFile)) {
+              projectsData = JSON.parse(fs.readFileSync(projectsFile, "utf-8"));
+            }
+            
+            projectsData.projects.push({
+              id: projectId,
+              name: name,
+              path: cloneResult.projectPath,
+              createdAt: new Date().toISOString(),
+              lastOpenedAt: new Date().toISOString(),
+              remote: git.url,
+            });
+            projectsData.activeProjectId = projectId;
+            
+            fs.writeFileSync(projectsFile, JSON.stringify(projectsData, null, 2));
+            
+            console.log(`[git-import] Project ${projectId} created successfully. Stack: ${stack.language}/${stack.framework || "unknown"}`);
+          } else {
+            console.error(`[git-import] Clone failed for ${projectId}:`, cloneResult.error);
+          }
+        } catch (error) {
+          console.error(`[git-import] Error during import for ${projectId}:`, error);
+        }
+      })();
+      
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/projects/:projectId/git/ops", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      const ops = listGitOps(projectId, limit);
+      res.json({ ops });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/projects/:projectId/git/ops/:opId", (req: Request, res: Response) => {
+    try {
+      const { projectId, opId } = req.params;
+      const tailLines = parseInt(req.query.tailLines as string) || 50;
+      
+      const op = getGitOp(opId);
+      if (!op || op.project_id !== projectId) {
+        return res.status(404).json({ error: "Git operation not found" });
+      }
+      
+      let logTail = "";
+      if (op.log_path) {
+        logTail = getGitOpLogTail(op.log_path, tailLines);
+      }
+      
+      res.json({
+        ...op,
+        logTail,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/projects/:projectId/git/remote", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const remote = getProjectRemote(projectId);
+      
+      if (!remote) {
+        return res.status(404).json({ error: "No remote configured for this project" });
+      }
+      
+      res.json({
+        provider: remote.provider,
+        remoteUrl: remote.remote_url,
+        defaultBranch: remote.default_branch,
+        lastFetchedAt: remote.last_fetched_at,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/:projectId/git/pull", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      
+      const projectPath = getProjectPath(projectId);
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const remote = getProjectRemote(projectId);
+      let pat: string | undefined;
+      
+      if (remote?.auth_ref) {
+        const secrets = getSecrets();
+        pat = secrets[remote.auth_ref];
+      }
+      
+      const result = await pullRepository({
+        projectId,
+        projectPath,
+        pat,
+      });
+      
+      if (result.success) {
+        try {
+          await incrementalUpdate(projectId, projectPath);
+        } catch (e) {
+          console.error(`[git-pull] Index update failed for ${projectId}:`, e);
+        }
+        
+        res.json({
+          ok: true,
+          gitOpId: result.gitOpId,
+          message: "Pull completed successfully",
+        });
+      } else {
+        res.status(400).json({
+          ok: false,
+          gitOpId: result.gitOpId,
+          error: result.error,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/:projectId/git/validate-url", (req: Request, res: Response) => {
+    try {
+      const { url } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: "url is required" });
+      }
+      
+      try {
+        const validated = validateRemoteUrl(url);
+        res.json({
+          valid: true,
+          sanitizedUrl: validated.sanitizedUrl,
+          provider: validated.provider,
+          owner: validated.owner,
+          repo: validated.repo,
+        });
+      } catch (error: any) {
+        res.json({
+          valid: false,
+          error: error.message,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

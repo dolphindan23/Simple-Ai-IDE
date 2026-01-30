@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderKanban, Plus, ChevronDown, Trash2, Check } from "lucide-react";
+import { FolderKanban, Plus, ChevronDown, Trash2, Check, GitBranch } from "lucide-react";
+import { ImportRepoModal } from "./ImportRepoModal";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -46,6 +47,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
   const queryClient = useQueryClient();
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
 
@@ -179,6 +181,14 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
             <Plus className="h-3.5 w-3.5 mr-2" />
             New Project
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setShowImportDialog(true)}
+            className="cursor-pointer"
+            data-testid="dropdown-import-repo"
+          >
+            <GitBranch className="h-3.5 w-3.5 mr-2" />
+            Import Git Repo
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -248,6 +258,16 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ImportRepoModal
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImported={(projectId) => {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+          onProjectChange?.();
+        }}
+      />
     </>
   );
 }

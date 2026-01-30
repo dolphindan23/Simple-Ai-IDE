@@ -67,6 +67,32 @@ function initializeTables(db: Database.Database): void {
       file_count INTEGER DEFAULT 0,
       chunk_count INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS project_remotes (
+      project_id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      remote_url TEXT NOT NULL,
+      default_branch TEXT,
+      auth_ref TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_fetched_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_remotes_provider ON project_remotes(provider);
+
+    CREATE TABLE IF NOT EXISTS project_git_ops (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      created_at TEXT DEFAULT (datetime('now')),
+      started_at TEXT,
+      ended_at TEXT,
+      log_path TEXT,
+      error TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_git_ops_project ON project_git_ops(project_id, created_at DESC);
   `);
   
   // Migration: add new columns to agent_runs if they don't exist
@@ -272,4 +298,117 @@ export function getIndexMeta(projectId: string): { last_indexed: string; file_co
   const db = getCapsulesDb();
   const stmt = db.prepare("SELECT last_indexed, file_count, chunk_count FROM index_meta WHERE project_id = ?");
   return stmt.get(projectId) as any;
+}
+
+export interface ProjectRemote {
+  project_id: string;
+  provider: string;
+  remote_url: string;
+  default_branch?: string | null;
+  auth_ref?: string | null;
+  created_at?: string;
+  last_fetched_at?: string | null;
+}
+
+export function createProjectRemote(remote: ProjectRemote): void {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO project_remotes 
+    (project_id, provider, remote_url, default_branch, auth_ref, last_fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    remote.project_id,
+    remote.provider,
+    remote.remote_url,
+    remote.default_branch || null,
+    remote.auth_ref || null,
+    remote.last_fetched_at || null
+  );
+}
+
+export function getProjectRemote(projectId: string): ProjectRemote | null {
+  const db = getCapsulesDb();
+  const stmt = db.prepare("SELECT * FROM project_remotes WHERE project_id = ?");
+  return stmt.get(projectId) as ProjectRemote | null;
+}
+
+export function updateProjectRemoteLastFetched(projectId: string): void {
+  const db = getCapsulesDb();
+  db.prepare("UPDATE project_remotes SET last_fetched_at = datetime('now') WHERE project_id = ?").run(projectId);
+}
+
+export type GitOpType = "clone" | "pull" | "checkout" | "submodule_update";
+export type GitOpStatus = "queued" | "running" | "succeeded" | "failed";
+
+export interface ProjectGitOp {
+  id: string;
+  project_id: string;
+  op: GitOpType;
+  status: GitOpStatus;
+  created_at?: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  log_path?: string | null;
+  error?: string | null;
+}
+
+export function createGitOp(op: { id: string; project_id: string; op: GitOpType }): ProjectGitOp {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT INTO project_git_ops (id, project_id, op, status)
+    VALUES (?, ?, ?, 'queued')
+  `);
+  stmt.run(op.id, op.project_id, op.op);
+  return getGitOp(op.id)!;
+}
+
+export function getGitOp(opId: string): ProjectGitOp | null {
+  const db = getCapsulesDb();
+  const stmt = db.prepare("SELECT * FROM project_git_ops WHERE id = ?");
+  return stmt.get(opId) as ProjectGitOp | null;
+}
+
+export function listGitOps(projectId: string, limit = 20): ProjectGitOp[] {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    SELECT * FROM project_git_ops 
+    WHERE project_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `);
+  return stmt.all(projectId, limit) as ProjectGitOp[];
+}
+
+export function updateGitOp(opId: string, updates: Partial<Pick<ProjectGitOp, "status" | "started_at" | "ended_at" | "log_path" | "error">>): void {
+  const db = getCapsulesDb();
+  const fields: string[] = [];
+  const values: any[] = [];
+  
+  if (updates.status !== undefined) {
+    fields.push("status = ?");
+    values.push(updates.status);
+  }
+  if (updates.started_at !== undefined) {
+    fields.push("started_at = ?");
+    values.push(updates.started_at);
+  }
+  if (updates.ended_at !== undefined) {
+    fields.push("ended_at = ?");
+    values.push(updates.ended_at);
+  }
+  if (updates.log_path !== undefined) {
+    fields.push("log_path = ?");
+    values.push(updates.log_path);
+  }
+  if (updates.error !== undefined) {
+    fields.push("error = ?");
+    values.push(updates.error);
+  }
+  
+  if (fields.length === 0) return;
+  values.push(opId);
+  
+  const stmt = db.prepare(`UPDATE project_git_ops SET ${fields.join(", ")} WHERE id = ?`);
+  stmt.run(...values);
 }
