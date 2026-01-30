@@ -124,71 +124,145 @@ This directory is auto-created on first run. Add it to `.gitignore` to avoid com
 
 ## Docker Installation (Optional)
 
-For containerized deployment:
+SimpleAide can be deployed using Docker with optional GPU support for Ollama.
 
-### docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  simpleaide:
-    build: .
-    ports:
-      - "8521:8521"
-    volumes:
-      - ./workspace:/app/workspace
-      - simpleaide-data:/app/.simpleaide
-    environment:
-      - NODE_ENV=production
-      - SIMPLEAIDE_ENV=production
-    restart: unless-stopped
-
-volumes:
-  simpleaide-data:
-```
-
-### Dockerfile
-
-```dockerfile
-FROM node:20-alpine
-
-# Install build dependencies for better-sqlite3
-RUN apk add --no-cache python3 make g++ git
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy application code
-COPY . .
-
-# Build the application
-RUN npm run build
-
-# Expose port
-EXPOSE 8521
-
-# Start the application
-CMD ["npm", "start"]
-```
-
-### Running with Docker
+### Quick Start (Basic Docker)
 
 ```bash
-# Build and start
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
+# Build and run
+docker build -t simpleaide .
+docker run -p 8521:8521 -v simpleaide-data:/app/data simpleaide
 ```
+
+### Docker Compose with GPU-Enabled Ollama
+
+For a complete deployment with GPU-accelerated Ollama, use the included `docker-compose.gpu.yml`:
+
+#### Prerequisites (NVIDIA GPU Host)
+
+1. **NVIDIA drivers installed** (verify with `nvidia-smi`)
+2. **Docker + Docker Compose v2** installed
+3. **NVIDIA Container Toolkit** installed:
+
+```bash
+# Ubuntu/Debian
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+| sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+| sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+**Verify GPU passthrough:**
+```bash
+docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+```
+
+#### Setup & Run
+
+1. **Create environment file:**
+```bash
+cp .env.docker.example .env.docker
+
+# Edit .env.docker and set:
+# - SESSION_SECRET (required - generate with: openssl rand -hex 32)
+# - OLLAMA_MODEL (default: qwen2.5:7b)
+```
+
+2. **Start the stack:**
+```bash
+docker compose -f docker-compose.gpu.yml up -d --build
+```
+
+3. **Check status:**
+```bash
+docker compose -f docker-compose.gpu.yml ps
+docker logs -f simpleaide-app
+docker logs -f simpleaide-ollama
+```
+
+4. **Verify GPU access in Ollama:**
+```bash
+docker exec -it simpleaide-ollama nvidia-smi
+docker exec -it simpleaide-ollama ollama list
+```
+
+5. **Access the app:**
+   - Open http://localhost:8521 in your browser
+
+#### Pull Additional Models
+
+```bash
+# Pull models into the Ollama container
+docker exec -it simpleaide-ollama ollama pull codellama
+docker exec -it simpleaide-ollama ollama pull qwen2.5:14b
+
+# List available models
+docker exec -it simpleaide-ollama ollama list
+```
+
+#### GPU Pinning (Multi-GPU Systems)
+
+To use a specific GPU, add to the `ollama` service in `docker-compose.gpu.yml`:
+
+```yaml
+environment:
+  - CUDA_VISIBLE_DEVICES=0   # Use GPU 0 only
+```
+
+For multiple Ollama instances (one per GPU), duplicate the `ollama` service with different:
+- Container names (`simpleaide-ollama-0`, `simpleaide-ollama-1`)
+- `CUDA_VISIBLE_DEVICES` values
+- Volume names (`ollama_data_0`, `ollama_data_1`)
+- Ports if exposing to host
+
+#### Stop the Stack
+
+```bash
+docker compose -f docker-compose.gpu.yml down
+
+# To also remove volumes (data will be lost):
+docker compose -f docker-compose.gpu.yml down -v
+```
+
+### docker-compose.gpu.yml Reference
+
+The GPU compose file includes:
+
+| Service | Description |
+|---------|-------------|
+| `app` | SimpleAide Node.js application on port 8521 |
+| `ollama` | GPU-enabled Ollama server with health checks |
+| `ollama-init` | One-time model puller (pulls OLLAMA_MODEL on startup) |
+
+| Volume | Description |
+|--------|-------------|
+| `ollama_data` | Persisted Ollama models and configuration |
+| `simpleaide_config` | Application config and runtime data (.simpleaide directory) |
+| `simpleaide_projects` | User projects |
+
+**Note:** GPU access uses `runtime: nvidia` which requires the NVIDIA Container Toolkit to be properly configured. If you get GPU errors, verify with:
+```bash
+docker run --rm --runtime=nvidia nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+```
+
+### Dockerfile Reference
+
+The included `Dockerfile` uses a multi-stage build:
+
+1. **Build stage**: Compiles TypeScript and builds the application
+2. **Runtime stage**: Minimal production image with only necessary files
+
+Key features:
+- Node 20 (bookworm-slim base)
+- Native module support (better-sqlite3)
+- Health check endpoint (`/api/status`)
+- Runs on port 8521 by default
 
 ## Configuration
 
