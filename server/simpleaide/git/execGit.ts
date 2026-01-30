@@ -53,11 +53,16 @@ export async function execGit(
     fs.writeFileSync(patFilePath, pat, { mode: 0o600 });
     
     askpassPath = path.join(tmpDir, `.askpass_${uniqueId}.sh`);
-    const askpassScript = `#!/bin/sh\ncat "${patFilePath}"\n`;
+    const askpassScript = `#!/bin/sh
+case "$1" in
+  *[Uu]sername*) echo "x-access-token" ;;
+  *[Pp]assword*) cat "${patFilePath}" ;;
+  *) cat "${patFilePath}" ;;
+esac
+`;
     fs.writeFileSync(askpassPath, askpassScript, { mode: 0o700 });
     
     baseEnv.GIT_ASKPASS = askpassPath;
-    baseEnv.GIT_USERNAME = "x-access-token";
   }
 
   return new Promise((resolve) => {

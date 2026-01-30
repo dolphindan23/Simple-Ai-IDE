@@ -73,6 +73,10 @@ function appendLog(logPath: string, message: string): void {
 export async function cloneRepository(options: CloneOptions): Promise<CloneResult> {
   const { projectId, projectName, url, branch, authRef, pat, depth = 1, recurseSubmodules = true, opId: providedOpId } = options;
   
+  if (pat && !/^https:\/\//i.test(url.trim())) {
+    return { success: false, gitOpId: "", error: "VALIDATION_FAILED: PAT authentication requires https:// URLs" };
+  }
+  
   let validated: ValidatedUrl;
   try {
     validated = validateRemoteUrl(url);
@@ -99,108 +103,108 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
   
   appendLog(logPath, `Staging directory: ${stagingDir}`);
   
-  let targetBranch = branch;
-  if (!targetBranch) {
-    try {
-      appendLog(logPath, "Detecting default branch...");
-      targetBranch = await getDefaultBranch(validated.sanitizedUrl, pat);
-      appendLog(logPath, `Default branch: ${targetBranch}`);
-    } catch (error: any) {
-      appendLog(logPath, `Failed to detect branch, defaulting to 'main': ${error.message}`);
-      targetBranch = "main";
+  let movedSuccessfully = false;
+  let finalPath = "";
+  
+  try {
+    let targetBranch = branch;
+    if (!targetBranch) {
+      try {
+        appendLog(logPath, "Detecting default branch...");
+        targetBranch = await getDefaultBranch(validated.sanitizedUrl, pat);
+        appendLog(logPath, `Default branch: ${targetBranch}`);
+      } catch (error: any) {
+        appendLog(logPath, `Failed to detect branch, defaulting to 'main': ${error.message}`);
+        targetBranch = "main";
+      }
     }
-  }
-  
-  const cloneArgs: string[] = ["clone"];
-  if (depth > 0) {
-    cloneArgs.push(`--depth=${depth}`);
-  }
-  cloneArgs.push("--branch", targetBranch);
-  if (recurseSubmodules) {
-    cloneArgs.push("--recurse-submodules");
-  }
-  cloneArgs.push(validated.sanitizedUrl, repoDir);
-  
-  appendLog(logPath, `Clone command: git ${cloneArgs.join(" ")}`);
-  
-  let result: ExecGitResult;
-  try {
-    result = await execGit(cloneArgs, { pat, timeoutMs: 10 * 60 * 1000 });
-  } catch (error: any) {
-    appendLog(logPath, `Clone error: ${error.message}`);
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: error.message });
+    
+    const cloneArgs: string[] = ["clone"];
+    if (depth > 0) {
+      cloneArgs.push(`--depth=${depth}`);
+    }
+    cloneArgs.push("--branch", targetBranch);
+    if (recurseSubmodules) {
+      cloneArgs.push("--recurse-submodules");
+    }
+    cloneArgs.push(validated.sanitizedUrl, repoDir);
+    
+    appendLog(logPath, `Clone command: git ${cloneArgs.join(" ")}`);
+    
+    let result: ExecGitResult;
+    try {
+      result = await execGit(cloneArgs, { pat, timeoutMs: 10 * 60 * 1000 });
+    } catch (error: any) {
+      appendLog(logPath, `Clone error: ${error.message}`);
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: error.message });
+      return { success: false, gitOpId: opId, error: error.message, logPath };
+    }
+    
+    appendLog(logPath, `Exit code: ${result.exitCode}`);
+    if (result.stdout) appendLog(logPath, `stdout: ${result.stdout}`);
+    if (result.stderr) appendLog(logPath, `stderr: ${result.stderr}`);
+    if (result.timedOut) appendLog(logPath, "Operation timed out");
+    if (result.truncated) appendLog(logPath, "Output was truncated");
+    
+    if (result.exitCode !== 0) {
+      const errorMsg = result.timedOut ? "Clone timed out" : (result.stderr || "Clone failed");
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
+      return { success: false, gitOpId: opId, error: errorMsg, logPath };
+    }
+    
+    const gitDir = path.join(repoDir, ".git");
+    if (!fs.existsSync(gitDir)) {
+      const errorMsg = "Clone completed but .git directory not found";
+      appendLog(logPath, errorMsg);
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
+      return { success: false, gitOpId: opId, error: errorMsg, logPath };
+    }
+    
+    const verifyResult = await execGit(["rev-parse", "HEAD"], { cwd: repoDir });
+    if (verifyResult.exitCode !== 0) {
+      const errorMsg = "Clone verification failed: could not read HEAD";
+      appendLog(logPath, errorMsg);
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
+      return { success: false, gitOpId: opId, error: errorMsg, logPath };
+    }
+    appendLog(logPath, `HEAD: ${verifyResult.stdout.trim()}`);
+    
+    ensureDir(PROJECTS_ROOT);
+    finalPath = path.join(PROJECTS_ROOT, projectId);
+    
+    if (fs.existsSync(finalPath)) {
+      const errorMsg = "Project directory already exists";
+      appendLog(logPath, errorMsg);
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
+      return { success: false, gitOpId: opId, error: errorMsg, logPath };
+    }
+    
+    try {
+      fs.renameSync(repoDir, finalPath);
+      movedSuccessfully = true;
+      appendLog(logPath, `Moved to final path: ${finalPath}`);
+    } catch (error: any) {
+      appendLog(logPath, `Move failed: ${error.message}`);
+      updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: error.message });
+      return { success: false, gitOpId: opId, error: error.message, logPath };
+    }
+    
+    createProjectRemote({
+      project_id: projectId,
+      provider: validated.provider,
+      remote_url: validated.sanitizedUrl,
+      default_branch: targetBranch,
+      auth_ref: authRef || null,
+      last_fetched_at: new Date().toISOString(),
+    });
+    
+    updateGitOp(opId, { status: "succeeded", ended_at: new Date().toISOString() });
+    appendLog(logPath, "Clone completed successfully");
+    
+    return { success: true, gitOpId: opId, projectPath: finalPath, logPath };
+  } finally {
     cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: error.message, logPath };
   }
-  
-  appendLog(logPath, `Exit code: ${result.exitCode}`);
-  if (result.stdout) appendLog(logPath, `stdout: ${result.stdout}`);
-  if (result.stderr) appendLog(logPath, `stderr: ${result.stderr}`);
-  if (result.timedOut) appendLog(logPath, "Operation timed out");
-  if (result.truncated) appendLog(logPath, "Output was truncated");
-  
-  if (result.exitCode !== 0) {
-    const errorMsg = result.timedOut ? "Clone timed out" : (result.stderr || "Clone failed");
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
-    cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: errorMsg, logPath };
-  }
-  
-  const gitDir = path.join(repoDir, ".git");
-  if (!fs.existsSync(gitDir)) {
-    const errorMsg = "Clone completed but .git directory not found";
-    appendLog(logPath, errorMsg);
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
-    cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: errorMsg, logPath };
-  }
-  
-  const verifyResult = await execGit(["rev-parse", "HEAD"], { cwd: repoDir });
-  if (verifyResult.exitCode !== 0) {
-    const errorMsg = "Clone verification failed: could not read HEAD";
-    appendLog(logPath, errorMsg);
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
-    cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: errorMsg, logPath };
-  }
-  appendLog(logPath, `HEAD: ${verifyResult.stdout.trim()}`);
-  
-  ensureDir(PROJECTS_ROOT);
-  const finalPath = path.join(PROJECTS_ROOT, projectId);
-  
-  if (fs.existsSync(finalPath)) {
-    const errorMsg = "Project directory already exists";
-    appendLog(logPath, errorMsg);
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: errorMsg });
-    cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: errorMsg, logPath };
-  }
-  
-  try {
-    fs.renameSync(repoDir, finalPath);
-    appendLog(logPath, `Moved to final path: ${finalPath}`);
-  } catch (error: any) {
-    appendLog(logPath, `Move failed: ${error.message}`);
-    updateGitOp(opId, { status: "failed", ended_at: new Date().toISOString(), error: error.message });
-    cleanupStaging(stagingDir);
-    return { success: false, gitOpId: opId, error: error.message, logPath };
-  }
-  
-  cleanupStaging(stagingDir);
-  
-  createProjectRemote({
-    project_id: projectId,
-    provider: validated.provider,
-    remote_url: validated.sanitizedUrl,
-    default_branch: targetBranch,
-    auth_ref: authRef || null,
-    last_fetched_at: new Date().toISOString(),
-  });
-  
-  updateGitOp(opId, { status: "succeeded", ended_at: new Date().toISOString() });
-  appendLog(logPath, "Clone completed successfully");
-  
-  return { success: true, gitOpId: opId, projectPath: finalPath, logPath };
 }
 
 export async function pullRepository(options: PullOptions): Promise<PullResult> {
