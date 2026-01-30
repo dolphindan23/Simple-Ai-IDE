@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 import { FileTree } from "@/components/FileTree";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -83,6 +84,36 @@ export default function IDEPage() {
   // Sidebar collapse state
   const [aiTeamCollapsed, setAiTeamCollapsed] = useState(false);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  
+  // Panel refs for imperative resize
+  const aiTeamPanelRef = useRef<ImperativePanelHandle>(null);
+  const explorerPanelRef = useRef<ImperativePanelHandle>(null);
+  
+  // Toggle AI Team sidebar with actual resize
+  const toggleAiTeamSidebar = useCallback(() => {
+    const panel = aiTeamPanelRef.current;
+    if (panel) {
+      if (aiTeamCollapsed) {
+        panel.resize(30);
+      } else {
+        panel.resize(3);
+      }
+    }
+    setAiTeamCollapsed(!aiTeamCollapsed);
+  }, [aiTeamCollapsed]);
+  
+  // Toggle Explorer sidebar with actual resize
+  const toggleExplorerSidebar = useCallback(() => {
+    const panel = explorerPanelRef.current;
+    if (panel) {
+      if (explorerCollapsed) {
+        panel.resize(15);
+      } else {
+        panel.resize(3);
+      }
+    }
+    setExplorerCollapsed(!explorerCollapsed);
+  }, [explorerCollapsed]);
   
   // Editor minimize state
   const [editorMinimized, setEditorMinimized] = useState(false);
@@ -946,7 +977,7 @@ export default function IDEPage() {
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
           {/* AI Team Panel (moved to left) */}
-          <ResizablePanel defaultSize={aiTeamCollapsed ? 3 : 30} minSize={3} maxSize={40}>
+          <ResizablePanel ref={aiTeamPanelRef} defaultSize={30} minSize={3} maxSize={40} collapsible collapsedSize={3}>
             <div className="h-full flex flex-col bg-sidebar border-r border-sidebar-border">
               <div className="px-3 py-2 border-b border-sidebar-border flex items-center justify-between gap-2">
                 {!aiTeamCollapsed && (
@@ -958,7 +989,7 @@ export default function IDEPage() {
                   variant="ghost"
                   size="icon"
                   className="h-5 w-5 shrink-0"
-                  onClick={() => setAiTeamCollapsed(!aiTeamCollapsed)}
+                  onClick={toggleAiTeamSidebar}
                   data-testid="button-toggle-ai-team-sidebar"
                 >
                   {aiTeamCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
@@ -1108,14 +1139,14 @@ export default function IDEPage() {
           <ResizableHandle />
 
           {/* Explorer Panel (moved to right) */}
-          <ResizablePanel defaultSize={explorerCollapsed ? 3 : 15} minSize={3} maxSize={25}>
+          <ResizablePanel ref={explorerPanelRef} defaultSize={15} minSize={3} maxSize={25} collapsible collapsedSize={3}>
             <div className="h-full flex flex-col bg-sidebar border-l border-sidebar-border">
               <div className="px-3 py-2 border-b border-sidebar-border flex items-center justify-between gap-2">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-5 w-5 shrink-0"
-                  onClick={() => setExplorerCollapsed(!explorerCollapsed)}
+                  onClick={toggleExplorerSidebar}
                   data-testid="button-toggle-explorer-sidebar"
                 >
                   {explorerCollapsed ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
