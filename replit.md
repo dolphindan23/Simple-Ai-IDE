@@ -9,6 +9,7 @@ SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-
 - Diff-first workflow (agents propose changes, users apply)
 
 ## Recent Changes (January 2026)
+- **Enhanced Status Strip**: Bloomberg-style status bar with CTX (context files), RUN (agent state), and Saved/Unsaved chips; left/right grouping for workspace vs infrastructure status
 - **Settings Modal AI Tab**: Added 4th tab for AI defaults (action, speed, diff preview, confirm destructive)
 - **Context Manager Drawer**: Visualize/manage AI file context with pin/search/clear functionality
 - **Keyboard Shortcuts Modal**: Displays all keybindings organized by category (General, Editor, Panels, AI)
