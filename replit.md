@@ -56,6 +56,20 @@ The system includes comprehensive trust hardening features for secure code chang
 - **Settings UI**: Provides a user interface for configuring all safety limits.
 - **Dangerous Change Dialog**: Displays clear warnings and requires explicit user confirmation for critical changes.
 
+### Run Capsules System
+The Run Capsules system provides isolated sandboxes for AI agent runs with comprehensive safety features:
+- **OverlayFS Capsule**: Copy-on-write filesystem overlay for isolated changes (workspace directory sits on top of repo).
+- **Immutable Path Protection**: Configurable paths in `.simpleaide/immutable.json` that require user confirmation before modification.
+- **Secret Scanning**: 14 regex patterns for detecting AWS keys, GitHub tokens, OpenAI keys, Stripe keys, etc. plus entropy-based detection for high-entropy strings.
+- **Git Checkpoints**: Stash-based checkpoints created at run start, enabling rollback to pre-run state.
+- **Approval Token System**: Time-limited (5 minute) tokens for apply/rollback operations.
+- **Pending Confirmation Flow**: Sensitive writes are queued for user approval, run status set to "needs_approval".
+- **Patch Export**: Export all changes as unified diff for review before application.
+- **Lexical Code Indexer**: FTS5-powered full-text search with language detection, chunking, and incremental updates.
+- **Tool Audit Logging**: All tool calls logged with inputs, outputs, and success status.
+- **Database**: SQLite (`capsules.db`) with tables for agent_runs, run_capsules, tool_audit_log, and project_index (FTS5).
+- **API Endpoints**: `/api/projects/:projectId/runs/*` for run management, patch export, apply, rollback, confirmations, and audit logs.
+
 ### Real-Time Agent Visibility System
 A real-time agent activity monitoring system provides visibility into AI operations:
 - **Agent Profiles Database**: SQLite tables store agent profiles and run events.

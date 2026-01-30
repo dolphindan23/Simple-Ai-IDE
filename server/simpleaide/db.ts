@@ -1,0 +1,246 @@
+import Database from "better-sqlite3";
+import * as path from "path";
+
+const DB_PATH = path.join(process.cwd(), "capsules.db");
+let db: Database.Database | null = null;
+
+export function getCapsulesDb(): Database.Database {
+  if (!db) {
+    db = new Database(DB_PATH);
+    db.pragma("journal_mode = WAL");
+    initializeTables(db);
+  }
+  return db;
+}
+
+function initializeTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      model_used TEXT,
+      git_checkpoint_before TEXT,
+      patch_applied TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_project ON agent_runs(project_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+
+    CREATE TABLE IF NOT EXISTS run_capsules (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES agent_runs(id),
+      workspace_path TEXT NOT NULL,
+      repo_path TEXT NOT NULL,
+      immutable_paths TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS tool_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      input TEXT,
+      output TEXT,
+      success INTEGER DEFAULT 1,
+      error_message TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_audit_run ON tool_audit_log(run_id);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS project_index USING fts5(
+      project_id,
+      file_path,
+      chunk_text,
+      language,
+      start_line,
+      end_line,
+      tokenize='porter'
+    );
+
+    CREATE TABLE IF NOT EXISTS index_meta (
+      project_id TEXT PRIMARY KEY,
+      last_indexed TEXT,
+      file_count INTEGER DEFAULT 0,
+      chunk_count INTEGER DEFAULT 0
+    );
+  `);
+}
+
+export interface AgentRun {
+  id: string;
+  project_id: string;
+  status: string;
+  model_used?: string | null;
+  git_checkpoint_before?: string | null;
+  patch_applied?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export function createAgentRun(run: Partial<AgentRun> & { id: string; project_id: string }): AgentRun {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT INTO agent_runs (id, project_id, status, model_used, git_checkpoint_before)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  
+  stmt.run(
+    run.id,
+    run.project_id,
+    run.status || "pending",
+    run.model_used || null,
+    run.git_checkpoint_before || null
+  );
+  
+  return getAgentRun(run.id)!;
+}
+
+export function getAgentRun(runId: string): AgentRun | null {
+  const db = getCapsulesDb();
+  const stmt = db.prepare("SELECT * FROM agent_runs WHERE id = ?");
+  return stmt.get(runId) as AgentRun | null;
+}
+
+export function listAgentRuns(projectId: string, limit = 50): AgentRun[] {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    SELECT * FROM agent_runs 
+    WHERE project_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `);
+  return stmt.all(projectId, limit) as AgentRun[];
+}
+
+export function updateAgentRun(runId: string, updates: Partial<AgentRun>): void {
+  const db = getCapsulesDb();
+  const fields: string[] = [];
+  const values: any[] = [];
+  
+  if (updates.status !== undefined) {
+    fields.push("status = ?");
+    values.push(updates.status);
+  }
+  if (updates.patch_applied !== undefined) {
+    fields.push("patch_applied = ?");
+    values.push(updates.patch_applied);
+  }
+  if (updates.git_checkpoint_before !== undefined) {
+    fields.push("git_checkpoint_before = ?");
+    values.push(updates.git_checkpoint_before);
+  }
+  
+  if (fields.length === 0) return;
+  
+  fields.push("updated_at = datetime('now')");
+  values.push(runId);
+  
+  const stmt = db.prepare(`UPDATE agent_runs SET ${fields.join(", ")} WHERE id = ?`);
+  stmt.run(...values);
+}
+
+export interface ToolAuditEntry {
+  id?: number;
+  run_id: string;
+  tool_name: string;
+  input?: string;
+  output?: string;
+  success?: number;
+  error_message?: string;
+  created_at?: string;
+}
+
+export function logToolCall(entry: ToolAuditEntry): void {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT INTO tool_audit_log (run_id, tool_name, input, output, success, error_message)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    entry.run_id,
+    entry.tool_name,
+    entry.input || null,
+    entry.output || null,
+    entry.success ?? 1,
+    entry.error_message || null
+  );
+}
+
+export function listToolAuditLog(runId: string, limit = 100): ToolAuditEntry[] {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    SELECT * FROM tool_audit_log 
+    WHERE run_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `);
+  return stmt.all(runId, limit) as ToolAuditEntry[];
+}
+
+export interface IndexChunk {
+  project_id: string;
+  file_path: string;
+  chunk_text: string;
+  language: string;
+  start_line: number;
+  end_line: number;
+}
+
+export function insertChunks(chunks: IndexChunk[]): void {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT INTO project_index (project_id, file_path, chunk_text, language, start_line, end_line)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  
+  const insertMany = db.transaction((items: IndexChunk[]) => {
+    for (const chunk of items) {
+      stmt.run(
+        chunk.project_id,
+        chunk.file_path,
+        chunk.chunk_text,
+        chunk.language,
+        chunk.start_line,
+        chunk.end_line
+      );
+    }
+  });
+  
+  insertMany(chunks);
+}
+
+export function clearProjectIndex(projectId: string): void {
+  const db = getCapsulesDb();
+  db.prepare("DELETE FROM project_index WHERE project_id = ?").run(projectId);
+}
+
+export function searchChunks(projectId: string, query: string, limit = 20): IndexChunk[] {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    SELECT project_id, file_path, chunk_text, language, start_line, end_line
+    FROM project_index
+    WHERE project_id = ? AND project_index MATCH ?
+    ORDER BY rank
+    LIMIT ?
+  `);
+  return stmt.all(projectId, query, limit) as IndexChunk[];
+}
+
+export function updateIndexMeta(projectId: string, fileCount: number, chunkCount: number): void {
+  const db = getCapsulesDb();
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO index_meta (project_id, last_indexed, file_count, chunk_count)
+    VALUES (?, datetime('now'), ?, ?)
+  `);
+  stmt.run(projectId, fileCount, chunkCount);
+}
+
+export function getIndexMeta(projectId: string): { last_indexed: string; file_count: number; chunk_count: number } | null {
+  const db = getCapsulesDb();
+  const stmt = db.prepare("SELECT last_indexed, file_count, chunk_count FROM index_meta WHERE project_id = ?");
+  return stmt.get(projectId) as any;
+}

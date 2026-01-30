@@ -12,6 +12,27 @@ import * as db from "./database";
 import { setupShellWebSocket, getActiveSessions as getActiveShellSessions } from "./shell";
 import * as aiDb from "./aiDb";
 import { subscribeToRun, subscribeToAllRuns, emitRunStatus, emitAgentStatus, emitStep } from "./aiEvents";
+import { randomUUID } from "crypto";
+import { loadProjectConfig, initDefaultConfigs } from "./simpleaide/config";
+import { 
+  getCapsulesDb, 
+  createAgentRun, 
+  getAgentRun, 
+  listAgentRuns, 
+  updateAgentRun,
+  listToolAuditLog,
+  searchChunks
+} from "./simpleaide/db";
+import { capsuleProvider } from "./simpleaide/capsule";
+import { 
+  createStashCheckpoint, 
+  rollbackToCheckpoint, 
+  applyPatchFile, 
+  createApprovalToken, 
+  validateApprovalToken,
+  clearApprovalToken
+} from "./simpleaide/git";
+import { buildIndex, getIndexMeta, searchLexical, incrementalUpdate } from "./simpleaide/indexer";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -2580,6 +2601,400 @@ export async function registerRoutes(
         });
       
       res.json(roster);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // Run Capsules API (SimpleAide)
+  // ============================================
+
+  function getProjectPath(projectId: string): string {
+    const projectPath = path.join(PROJECTS_DIR, projectId);
+    const resolved = path.resolve(projectPath);
+    if (!resolved.startsWith(path.resolve(PROJECTS_DIR))) {
+      throw new Error("Invalid project path");
+    }
+    return resolved;
+  }
+
+  function validateRunOwnership(runId: string, projectId: string): boolean {
+    const run = getAgentRun(runId);
+    return run !== null && run.project_id === projectId;
+  }
+
+  app.post("/api/projects/:projectId/runs", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const projectPath = getProjectPath(projectId);
+      
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      await initDefaultConfigs(projectPath);
+      const config = loadProjectConfig(projectPath);
+      
+      const runId = randomUUID();
+      const capsule = capsuleProvider.createCapsule(runId, projectPath, config.immutablePaths || []);
+      
+      const checkpointRef = await createStashCheckpoint(projectPath, `run-${runId}-start`);
+      
+      createAgentRun({
+        id: runId,
+        project_id: projectId,
+        status: "running",
+        model_used: req.body.model || "default",
+        git_checkpoint_before: checkpointRef || null
+      });
+
+      res.json({ 
+        runId, 
+        status: "running",
+        checkpoint: checkpointRef || null
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const runs = listAgentRuns(projectId, limit);
+      res.json(runs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const run = getAgentRun(runId);
+      res.json(run);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/runs/:runId/stop", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      capsuleProvider.destroyCapsule(runId);
+      updateAgentRun(runId, { status: "stopped" });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId/patch", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const capsule = capsuleProvider.getCapsule(runId);
+      if (!capsule) {
+        return res.status(404).json({ error: "Capsule not found" });
+      }
+      
+      const patch = capsule.exportPatch();
+      res.json({ patch });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId/apply/token", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      const capsule = capsuleProvider.getCapsule(runId);
+      
+      if (!capsule) {
+        return res.status(404).json({ error: "Capsule not found" });
+      }
+      
+      const patch = capsule.exportPatch();
+      const token = createApprovalToken(runId, projectPath);
+      
+      res.json({ 
+        token, 
+        expiresIn: 300,
+        hasChanges: patch.trim().length > 0,
+        changedFiles: capsule.listModified(),
+        deletedFiles: capsule.listDeleted()
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/runs/:runId/apply", async (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      const { approvalToken } = req.body;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      if (!approvalToken) {
+        return res.status(400).json({ error: "Approval token required. Get one from GET /apply/token first." });
+      }
+      
+      if (!validateApprovalToken(runId, approvalToken)) {
+        return res.status(403).json({ error: "Invalid or expired approval token" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      const capsule = capsuleProvider.getCapsule(runId);
+      
+      if (!capsule) {
+        return res.status(404).json({ error: "Capsule not found" });
+      }
+      
+      const modifiedFiles = capsule.listModified();
+      const deletedFiles = capsule.listDeleted();
+      
+      for (const filePath of modifiedFiles) {
+        const content = capsule.read(filePath);
+        if (content !== null) {
+          const fullPath = path.join(projectPath, filePath);
+          const dir = path.dirname(fullPath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          fs.writeFileSync(fullPath, content, "utf-8");
+        }
+      }
+      
+      for (const filePath of deletedFiles) {
+        const fullPath = path.join(projectPath, filePath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      }
+      
+      const patch = capsule.exportPatch();
+      updateAgentRun(runId, { 
+        status: "applied",
+        patch_applied: patch 
+      });
+      capsuleProvider.destroyCapsule(runId);
+      clearApprovalToken(runId);
+      
+      res.json({ 
+        success: true,
+        appliedFiles: modifiedFiles.length,
+        deletedFiles: deletedFiles.length
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId/rollback/token", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      const run = getAgentRun(runId);
+      
+      if (!run?.git_checkpoint_before) {
+        return res.status(400).json({ error: "No checkpoint available for rollback" });
+      }
+      
+      const token = createApprovalToken(runId, projectPath);
+      
+      res.json({ 
+        token, 
+        expiresIn: 300,
+        checkpoint: run.git_checkpoint_before
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/runs/:runId/rollback", async (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      const { approvalToken } = req.body;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      if (!approvalToken) {
+        return res.status(400).json({ error: "Approval token required. Get one from GET /rollback/token first." });
+      }
+      
+      if (!validateApprovalToken(runId, approvalToken)) {
+        return res.status(403).json({ error: "Invalid or expired approval token" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      const run = getAgentRun(runId);
+      
+      if (!run?.git_checkpoint_before) {
+        return res.status(400).json({ error: "No checkpoint available for rollback" });
+      }
+      
+      const result = await rollbackToCheckpoint(projectPath, run.git_checkpoint_before);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: "Failed to rollback", details: result.error });
+      }
+      
+      updateAgentRun(runId, { status: "rolled_back" });
+      capsuleProvider.destroyCapsule(runId);
+      clearApprovalToken(runId);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId/pending", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const capsule = capsuleProvider.getCapsule(runId);
+      if (!capsule) {
+        return res.json({ pending: [] });
+      }
+      
+      const pendingWrites = capsule.getPendingWrites();
+      const pending: Array<{ key: string; filePath: string; reason: string }> = [];
+      pendingWrites.forEach((value, key) => {
+        pending.push({ key, filePath: value.filePath, reason: value.reason });
+      });
+      
+      res.json({ pending });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/runs/:runId/confirm/:confirmKey", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId, confirmKey } = req.params;
+      const { approve } = req.body;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const capsule = capsuleProvider.getCapsule(runId);
+      if (!capsule) {
+        return res.status(404).json({ error: "Capsule not found" });
+      }
+      
+      const resolved = capsule.resolvePending(confirmKey, approve === true);
+      if (!resolved) {
+        return res.status(404).json({ error: "Pending confirmation not found" });
+      }
+      
+      const remainingPending = capsule.getPendingWrites();
+      if (remainingPending.size === 0) {
+        const run = getAgentRun(runId);
+        if (run?.status === "needs_approval") {
+          updateAgentRun(runId, { status: "running" });
+        }
+      }
+      
+      res.json({ success: true, approved: approve, remainingPending: remainingPending.size });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/runs/:runId/audit", (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      
+      if (!validateRunOwnership(runId, projectId)) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = listToolAuditLog(runId, limit);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/index/build", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const projectPath = getProjectPath(projectId);
+      
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const stats = await buildIndex(projectPath, projectId);
+      res.json({ success: true, ...stats });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/index/search", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const query = req.query.q as string;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter 'q' is required" });
+      }
+      
+      const results = searchChunks(projectId, query, limit);
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/index/meta", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const meta = getIndexMeta(projectId);
+      res.json(meta || { indexed: false });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
