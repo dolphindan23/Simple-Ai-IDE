@@ -197,6 +197,13 @@ export async function registerRoutes(
     fs.writeFileSync(metaPath, JSON.stringify(project, null, 2));
   }
 
+  // ==================== Health Check ====================
+  // Lightweight health endpoint for Docker/orchestration health checks
+  // Returns quickly without DB or external service calls
+  app.get("/health", (req: Request, res: Response) => {
+    res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+
   // List all projects
   app.get("/api/projects", (req: Request, res: Response) => {
     try {

@@ -45,9 +45,9 @@ RUN mkdir -p /app/.simpleaide /app/projects
 
 EXPOSE 8521
 
-# Health check
+# Health check (lightweight endpoint, no DB/LLM calls)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD node -e "fetch('http://localhost:8521/api/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+    CMD node -e "fetch('http://localhost:8521/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
 # Start the application
 CMD ["npm", "run", "start"]

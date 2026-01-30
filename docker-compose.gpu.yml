@@ -33,6 +33,13 @@ services:
       - OLLAMA_KEEP_ALIVE=10m
       - OLLAMA_NUM_PARALLEL=2
       - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "sh", "-c", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 10s
