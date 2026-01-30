@@ -125,7 +125,7 @@ function ApplyTemplateModal({
     },
     onSuccess: (data) => {
       onApplied(data);
-      if (data.status === "applied") {
+      if (data.status === "applied" || data.status === "staged") {
         onOpenChange(false);
         queryClient.invalidateQueries({ queryKey: ["/api/v1/projects", projectId, "capabilities"] });
       }
@@ -291,7 +291,7 @@ export function TemplatesPanel({ projectId, compact }: TemplatesPanelProps) {
 
   const handleApplied = (result: ApplyResult) => {
     setLastApplyResult(result);
-    if (result.status === "applied") {
+    if (result.status === "applied" || result.status === "staged") {
       setSelectedTemplateId(null);
     }
   };
@@ -343,12 +343,17 @@ export function TemplatesPanel({ projectId, compact }: TemplatesPanelProps) {
         )}
       </ScrollArea>
 
-      {lastApplyResult?.status === "applied" && (
+      {(lastApplyResult?.status === "applied" || lastApplyResult?.status === "staged") && (
         <div className="p-2 border-t">
           <div className="flex items-center gap-2 text-green-500 text-xs">
             <CheckCircle className="h-3.5 w-3.5" />
-            <span>Template applied: {lastApplyResult.createdFiles?.length || 0} files created</span>
+            <span>Template staged: {lastApplyResult.createdFiles?.length || 0} files ready to apply</span>
           </div>
+          {lastApplyResult.runId && (
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Run ID: {lastApplyResult.runId}
+            </p>
+          )}
         </div>
       )}
 

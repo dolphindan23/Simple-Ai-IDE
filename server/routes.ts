@@ -3065,13 +3065,14 @@ export async function registerRoutes(
       }
       
       res.json({
-        status: "applied",
+        status: "staged",
         runId: result.runId,
         createdFiles: result.createdFiles,
         patchSummary: result.patchSummary,
         capabilitiesUpdated: result.capabilitiesUpdated,
         requiresSecrets: result.requiresSecrets,
-        postInstallSteps: result.postInstallSteps
+        postInstallSteps: result.postInstallSteps,
+        message: "Template staged in capsule. Call POST /api/projects/:projectId/runs/:runId/apply to commit changes to project."
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
