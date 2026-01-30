@@ -68,6 +68,20 @@ function initializeTables(db: Database.Database): void {
       chunk_count INTEGER DEFAULT 0
     );
   `);
+  
+  // Migration: add new columns to agent_runs if they don't exist
+  const tableInfo = db.prepare("PRAGMA table_info(agent_runs)").all() as { name: string }[];
+  const existingColumns = new Set(tableInfo.map(c => c.name));
+  
+  if (!existingColumns.has("proof_policy_json")) {
+    db.exec("ALTER TABLE agent_runs ADD COLUMN proof_policy_json TEXT");
+  }
+  if (!existingColumns.has("proof_results_json")) {
+    db.exec("ALTER TABLE agent_runs ADD COLUMN proof_results_json TEXT");
+  }
+  if (!existingColumns.has("template_apply_json")) {
+    db.exec("ALTER TABLE agent_runs ADD COLUMN template_apply_json TEXT");
+  }
 }
 
 export interface AgentRun {
@@ -77,6 +91,9 @@ export interface AgentRun {
   model_used?: string | null;
   git_checkpoint_before?: string | null;
   patch_applied?: string | null;
+  proof_policy_json?: string | null;
+  proof_results_json?: string | null;
+  template_apply_json?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -132,6 +149,18 @@ export function updateAgentRun(runId: string, updates: Partial<AgentRun>): void 
   if (updates.git_checkpoint_before !== undefined) {
     fields.push("git_checkpoint_before = ?");
     values.push(updates.git_checkpoint_before);
+  }
+  if (updates.proof_policy_json !== undefined) {
+    fields.push("proof_policy_json = ?");
+    values.push(updates.proof_policy_json);
+  }
+  if (updates.proof_results_json !== undefined) {
+    fields.push("proof_results_json = ?");
+    values.push(updates.proof_results_json);
+  }
+  if (updates.template_apply_json !== undefined) {
+    fields.push("template_apply_json = ?");
+    values.push(updates.template_apply_json);
   }
   
   if (fields.length === 0) return;

@@ -145,8 +145,55 @@ export class OverlayFsCapsule {
     return Array.from(this.deletedFiles);
   }
 
-  getPendingWrites(): Map<string, { filePath: string; content: string; reason: string }> {
-    return this.pendingWrites;
+  getPendingWrites(): { key: string; filePath: string; content: string; reason: string }[] {
+    const result: { key: string; filePath: string; content: string; reason: string }[] = [];
+    this.pendingWrites.forEach((value, key) => {
+      result.push({ key, ...value });
+    });
+    return result;
+  }
+
+  addImmutablePattern(pattern: string): void {
+    if (!this.immutablePaths.includes(pattern)) {
+      this.immutablePaths.push(pattern);
+    }
+  }
+
+  writeFile(filePath: string, content: string, options?: { approvalToken?: string }): CapsuleWriteResult {
+    const normalizedPath = this.normalizePath(filePath);
+
+    if (isPathImmutable(normalizedPath, this.immutablePaths)) {
+      if (options?.approvalToken) {
+        return this.performWrite(normalizedPath, content);
+      }
+      
+      const confirmKey = `${this.runId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      this.pendingWrites.set(confirmKey, {
+        filePath: normalizedPath,
+        content,
+        reason: `Path "${normalizedPath}" is marked as immutable`
+      });
+      
+      throw new Error(`Path "${normalizedPath}" requires approval (immutable path)`);
+    }
+
+    const secretsFound = scanForSecrets(content);
+    if (secretsFound.length > 0) {
+      if (options?.approvalToken) {
+        return this.performWrite(normalizedPath, content);
+      }
+
+      const confirmKey = `${this.runId}-secret-${Date.now()}`;
+      this.pendingWrites.set(confirmKey, {
+        filePath: normalizedPath,
+        content,
+        reason: `Secret detected in content`
+      });
+      
+      throw new Error(`Path "${normalizedPath}" contains potential secrets requiring approval`);
+    }
+
+    return this.performWrite(normalizedPath, content);
   }
 
   resolvePending(confirmKey: string, approved: boolean): boolean {
@@ -164,15 +211,15 @@ export class OverlayFsCapsule {
   exportPatch(): string {
     const patches: string[] = [];
 
-    for (const [filePath, content] of this.modifiedFiles) {
+    this.modifiedFiles.forEach((content, filePath) => {
       const originalContent = this.getOriginalContent(filePath);
       const patch = this.createUnifiedDiff(filePath, originalContent, content);
       if (patch) {
         patches.push(patch);
       }
-    }
+    });
 
-    for (const filePath of this.deletedFiles) {
+    this.deletedFiles.forEach((filePath) => {
       const originalContent = this.getOriginalContent(filePath);
       if (originalContent) {
         const patch = this.createUnifiedDiff(filePath, originalContent, "");
@@ -180,7 +227,7 @@ export class OverlayFsCapsule {
           patches.push(patch);
         }
       }
-    }
+    });
 
     return patches.join("\n");
   }
@@ -254,10 +301,18 @@ export class OverlayFsCapsule {
 class CapsuleProvider {
   private capsules: Map<string, OverlayFsCapsule> = new Map();
 
-  createCapsule(runId: string, repoPath: string, immutablePaths: string[]): OverlayFsCapsule {
+  createCapsule(runId: string, repoPath: string, immutablePaths: string[] = []): OverlayFsCapsule {
     const capsule = new OverlayFsCapsule(runId, repoPath, immutablePaths);
     this.capsules.set(runId, capsule);
     return capsule;
+  }
+
+  getOrCreateCapsule(runId: string, repoPath: string, immutablePaths: string[] = []): OverlayFsCapsule {
+    const existing = this.capsules.get(runId);
+    if (existing) {
+      return existing;
+    }
+    return this.createCapsule(runId, repoPath, immutablePaths);
   }
 
   getCapsule(runId: string): OverlayFsCapsule | undefined {
