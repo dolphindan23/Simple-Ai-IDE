@@ -90,6 +90,10 @@ export const editorSettingsSchema = z.object({
 
 export const aiSettingsSchema = z.object({
   autoSave: z.boolean().default(true),
+  defaultAction: z.enum(["plan", "implement", "test", "review"]).default("plan"),
+  defaultSpeed: z.enum(["fast", "accurate"]).default("fast"),
+  showDiffBeforeApply: z.boolean().default(true),
+  confirmDestructiveChanges: z.boolean().default(true),
 });
 
 // Trust and safety settings for agent code editing
@@ -119,7 +123,7 @@ export const trustSettingsSchema = z.object({
 export type TrustSettings = z.infer<typeof trustSettingsSchema>;
 
 export const generalSettingsSchema = z.object({
-  theme: z.enum(["light", "dark", "system"]).default("dark"),
+  theme: z.enum(["light", "dark", "terminal-noir", "system"]).default("dark"),
   autoSaveDelay: z.number().min(500).max(10000).default(1000),
   showHiddenFiles: z.boolean().default(false),
 });

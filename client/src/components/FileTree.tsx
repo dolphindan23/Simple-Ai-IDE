@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { FileNode } from "@shared/schema";
 
 interface FileTreeProps {
@@ -76,17 +77,19 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
 
   return (
     <div>
-      <div
-        data-testid={`file-tree-node-${node.path}`}
-        onClick={handleClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        className={cn(
-          "group flex items-center gap-1 w-full px-2 py-1 text-sm text-left hover-elevate rounded-sm transition-colors cursor-pointer",
-          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
-        )}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      >
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            data-testid={`file-tree-node-${node.path}`}
+            onClick={handleClick}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            className={cn(
+              "group flex items-center gap-1 w-full px-2 py-1 text-sm text-left hover-elevate rounded-sm transition-colors cursor-pointer",
+              isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
+            )}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          >
         {isDirectory ? (
           <>
             {isExpanded ? (
@@ -189,7 +192,7 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 text-destructive hover:text-destructive"
+                  className="h-5 w-5 text-destructive"
                   onClick={(e) => handleAction(e, () => onDelete(node.path))}
                   data-testid={`btn-delete-${node.path}`}
                 >
@@ -201,6 +204,48 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
           )}
         </div>
       </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48" data-testid={`context-menu-${node.path}`}>
+          {isDirectory && (
+            <>
+              {onNewFile && (
+                <ContextMenuItem onClick={() => onNewFile(node.path)} data-testid={`ctx-new-file-${node.path}`}>
+                  <FilePlus className="h-4 w-4 mr-2" />
+                  New File
+                </ContextMenuItem>
+              )}
+              {onNewFolder && (
+                <ContextMenuItem onClick={() => onNewFolder(node.path)} data-testid={`ctx-new-folder-${node.path}`}>
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  New Folder
+                </ContextMenuItem>
+              )}
+              <ContextMenuSeparator />
+            </>
+          )}
+          {onRename && (
+            <ContextMenuItem onClick={() => onRename(node.path)} data-testid={`ctx-rename-${node.path}`}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Rename
+            </ContextMenuItem>
+          )}
+          {onCopyPath && (
+            <ContextMenuItem onClick={() => onCopyPath(node.path)} data-testid={`ctx-copy-path-${node.path}`}>
+              <Copy className="h-4 w-4 mr-2" />
+              Copy Path
+            </ContextMenuItem>
+          )}
+          {onDelete && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onDelete(node.path)} className="text-destructive" data-testid={`ctx-delete-${node.path}`}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </ContextMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
       
       {isDirectory && isExpanded && node.children && (
         <div>

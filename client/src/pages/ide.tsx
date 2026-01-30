@@ -16,8 +16,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction, ChevronLeft, ChevronRight, ChevronDown, Minus } from "lucide-react";
+import { Sun, Moon, Monitor, FolderTree, RefreshCw, Menu, Save, FilePlus, FolderPlus, Trash2, Copy, FileEdit, Settings, Database, KeyRound, Terminal, Construction, ChevronLeft, ChevronRight, ChevronDown, Minus, RotateCcw, LayoutTemplate, Keyboard } from "lucide-react";
 import { SettingsModal } from "@/components/SettingsModal";
+import { ContextManager } from "@/components/ContextManager";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { AIAgentsPanel } from "@/components/AIAgentsPanel";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { RunTimeline } from "@/components/RunTimeline";
@@ -82,6 +85,21 @@ export default function IDEPage() {
   
   // Editor minimize state
   const [editorMinimized, setEditorMinimized] = useState(false);
+  
+  // New modal states
+  const [showContextManager, setShowContextManager] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  
+  // Context manager state
+  const [contextFiles, setContextFiles] = useState<Array<{ path: string; pinned: boolean }>>(() => {
+    const saved = localStorage.getItem("simpleaide-context-files");
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Persist context files
+  useEffect(() => {
+    localStorage.setItem("simpleaide-context-files", JSON.stringify(contextFiles));
+  }, [contextFiles]);
   
   // Persist terminal state
   useEffect(() => {
@@ -601,7 +619,6 @@ export default function IDEPage() {
                 Save
                 <span className="ml-auto text-xs text-muted-foreground">Ctrl+S</span>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
                   if (selectedFile) {
@@ -616,14 +633,6 @@ export default function IDEPage() {
                 Rename
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => selectedFile && duplicateMutation.mutate(selectedFile)}
-                disabled={!selectedFile}
-                data-testid="menu-duplicate"
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem
                 onClick={() => handleCopyPath()}
                 disabled={!selectedFile}
                 data-testid="menu-copy-path"
@@ -631,7 +640,6 @@ export default function IDEPage() {
                 <Copy className="h-4 w-4 mr-2" />
                 Copy Path
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={!selectedFile}
@@ -640,6 +648,42 @@ export default function IDEPage() {
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setShowSettingsDialog(true)}
+                data-testid="menu-settings"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+                <span className="ml-auto text-xs text-muted-foreground">Ctrl+,</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => window.location.reload()}
+                data-testid="menu-reload"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reload Window
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setAiTeamCollapsed(false);
+                  setExplorerCollapsed(false);
+                  setTerminalState("expanded");
+                  setEditorMinimized(false);
+                  toast({ title: "Layout reset to default" });
+                }}
+                data-testid="menu-reset-layout"
+              >
+                <LayoutTemplate className="h-4 w-4 mr-2" />
+                Reset Layout
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setShowShortcutsModal(true)}
+                data-testid="menu-shortcuts"
+              >
+                <Keyboard className="h-4 w-4 mr-2" />
+                Keyboard Shortcuts
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -682,6 +726,19 @@ export default function IDEPage() {
 
       {/* Settings Modal */}
       <SettingsModal open={showSettingsDialog} onOpenChange={setShowSettingsDialog} />
+
+      {/* Context Manager Drawer */}
+      <ContextManager
+        open={showContextManager}
+        onOpenChange={setShowContextManager}
+        files={files}
+        selectedFile={selectedFile}
+        contextFiles={contextFiles}
+        onContextFilesChange={setContextFiles}
+      />
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal open={showShortcutsModal} onOpenChange={setShowShortcutsModal} />
 
       {/* Dangerous Change Confirmation Dialog */}
       <DangerousChangeDialog
@@ -922,6 +979,11 @@ export default function IDEPage() {
                     {editorMinimized ? <ChevronDown className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
                   </Button>
                 </div>
+              )}
+              
+              {/* Breadcrumbs - shown when file is selected in editor mode */}
+              {activeTab === "editor" && selectedFile && !editorMinimized && (
+                <Breadcrumbs path={selectedFile} />
               )}
               
               {/* Main Workspace Content */}

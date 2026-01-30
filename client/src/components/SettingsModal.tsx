@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Plus, X } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { Settings as SettingsType } from "@shared/schema";
 import { useTheme, type Theme } from "./ThemeProvider";
@@ -76,7 +76,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-3" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-4" data-testid="settings-tabs">
             <TabsTrigger value="general" className="flex items-center gap-1" data-testid="tab-general">
               <Monitor className="w-4 h-4" />
               General
@@ -84,6 +84,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <TabsTrigger value="editor" className="flex items-center gap-1" data-testid="tab-editor">
               <Code2 className="w-4 h-4" />
               Editor
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="flex items-center gap-1" data-testid="tab-ai">
+              <Bot className="w-4 h-4" />
+              AI
             </TabsTrigger>
             <TabsTrigger value="trust" className="flex items-center gap-1" data-testid="tab-trust">
               <Shield className="w-4 h-4" />
@@ -270,6 +274,86 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   })}
                   placeholder="JetBrains Mono, monospace"
                   data-testid="input-font-family"
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="ai" className="space-y-4 mt-4" data-testid="panel-ai">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Default Action</Label>
+                  <p className="text-sm text-muted-foreground">Default AI task mode</p>
+                </div>
+                <Select
+                  value={settings.ai?.defaultAction ?? "plan"}
+                  onValueChange={(value) => setSettings({
+                    ...settings,
+                    ai: { ...settings.ai, defaultAction: value as any }
+                  })}
+                >
+                  <SelectTrigger className="w-[140px]" data-testid="select-default-action">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="plan">Plan</SelectItem>
+                    <SelectItem value="implement">Implement</SelectItem>
+                    <SelectItem value="test">Test</SelectItem>
+                    <SelectItem value="review">Review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Default Speed</Label>
+                  <p className="text-sm text-muted-foreground">Fast uses smaller models, Accurate uses larger</p>
+                </div>
+                <Select
+                  value={settings.ai?.defaultSpeed ?? "fast"}
+                  onValueChange={(value) => setSettings({
+                    ...settings,
+                    ai: { ...settings.ai, defaultSpeed: value as any }
+                  })}
+                >
+                  <SelectTrigger className="w-[140px]" data-testid="select-default-speed">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fast">Fast</SelectItem>
+                    <SelectItem value="accurate">Accurate</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Show Diff Before Apply</Label>
+                  <p className="text-sm text-muted-foreground">Review changes before applying them</p>
+                </div>
+                <Switch
+                  checked={settings.ai?.showDiffBeforeApply ?? true}
+                  onCheckedChange={(checked) => setSettings({
+                    ...settings,
+                    ai: { ...settings.ai, showDiffBeforeApply: checked }
+                  })}
+                  data-testid="switch-show-diff"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Confirm Destructive Changes</Label>
+                  <p className="text-sm text-muted-foreground">Require confirmation for file deletions</p>
+                </div>
+                <Switch
+                  checked={settings.ai?.confirmDestructiveChanges ?? true}
+                  onCheckedChange={(checked) => setSettings({
+                    ...settings,
+                    ai: { ...settings.ai, confirmDestructiveChanges: checked }
+                  })}
+                  data-testid="switch-confirm-destructive"
                 />
               </div>
             </div>
