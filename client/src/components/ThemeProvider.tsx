@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-export type Theme = "dark" | "light" | "terminal-noir";
+export type Theme = "dark" | "light" | "terminal-noir" | "alpha-terminal";
 
 export const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "terminal-noir", label: "Terminal Noir" },
+  { value: "alpha-terminal", label: "Alpha Terminal" },
 ];
 
 interface ThemeContextType {
@@ -28,7 +29,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("light", "dark", "terminal-noir");
+    root.classList.remove("light", "dark", "terminal-noir", "alpha-terminal");
     root.classList.add(theme);
     localStorage.setItem("simpleaide-theme", theme);
   }, [theme]);

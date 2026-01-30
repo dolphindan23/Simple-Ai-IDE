@@ -2,6 +2,7 @@ import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import { useTheme } from "./ThemeProvider";
 import { Loader2 } from "lucide-react";
 import { defineTerminalNoirTheme, TERMINAL_NOIR_THEME_NAME } from "@/monaco/terminalNoirTheme";
+import { defineAlphaTerminalTheme, ALPHA_TERMINAL_THEME_NAME } from "@/monaco/alphaTerminalTheme";
 
 interface CodeEditorProps {
   value: string;
@@ -42,6 +43,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
   const getMonacoTheme = () => {
     switch (theme) {
       case "terminal-noir": return TERMINAL_NOIR_THEME_NAME;
+      case "alpha-terminal": return ALPHA_TERMINAL_THEME_NAME;
       case "light": return "simpleaide-light";
       default: return "simpleaide-dark";
     }
@@ -49,6 +51,7 @@ export function CodeEditor({ value, onChange, language, readOnly = false, path }
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     defineTerminalNoirTheme(monaco);
+    defineAlphaTerminalTheme(monaco);
 
     monaco.editor.defineTheme("simpleaide-dark", {
       base: "vs-dark",
