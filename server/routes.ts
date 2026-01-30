@@ -36,6 +36,7 @@ import { buildIndex, getIndexMeta, searchLexical, incrementalUpdate } from "./si
 import { listTemplates, loadTemplate, validateTemplate } from "./simpleaide/templates/engine";
 import { applyTemplateInCapsule } from "./simpleaide/templates/apply";
 import { readCapabilities } from "./simpleaide/capabilities";
+import { templateToolDefinitions, dispatchTemplateTool } from "./simpleaide/tools";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -3090,6 +3091,49 @@ export async function registerRoutes(
       res.json(capabilities);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/tools/templates", (_req: Request, res: Response) => {
+    try {
+      res.json({ tools: templateToolDefinitions });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/:projectId/runs/:runId/tools/exec", async (req: Request, res: Response) => {
+    try {
+      const { projectId, runId } = req.params;
+      const { toolName, input = {}, approvalToken } = req.body;
+      
+      if (!toolName) {
+        return res.status(400).json({ error: "toolName is required" });
+      }
+      
+      if (!toolName.startsWith("templates.") && !toolName.startsWith("capabilities.")) {
+        return res.status(400).json({ error: "Unknown tool namespace" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const result = await dispatchTemplateTool(toolName, input, {
+        runId,
+        projectId,
+        projectPath,
+        approvalToken
+      });
+      
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 
