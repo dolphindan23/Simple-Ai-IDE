@@ -1,24 +1,7 @@
 # SimpleAide - AI-Powered Coding Workspace
 
 ## Overview
-SimpleAide is an AI-powered coding workspace designed to streamline development with an AI-driven multi-agent workflow. It integrates a Monaco-based code editor, a file tree, a terminal, and an AI Team sidebar for generating plans, implementing code, running tests, and reviewing changes. The project aims to provide a minimal yet powerful IDE experience, leveraging AI to enhance developer productivity and accelerate software delivery.
-
-## Quick Start
-
-### Prerequisites
-- Node.js 20+ (required for native fetch)
-- Git (required for patch application)
-- Build tools for better-sqlite3: Python 3, make, g++ (macOS: `xcode-select --install`, Ubuntu: `apt install build-essential python3`)
-
-### Running Locally
-```bash
-npm install
-npm run dev
-```
-
-The app runs on **port 5000** (Replit) or **port 8521** (local, configurable via `PORT` env var).
-
-For detailed installation instructions, see [LOCAL_INSTALL.md](./LOCAL_INSTALL.md).
+SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-agent workflow to streamline development. It provides a minimal yet powerful IDE experience by combining a Monaco-based code editor, a file tree, a terminal, and an AI Team sidebar. The project's core purpose is to leverage AI to enhance developer productivity, accelerate software delivery, and provide a comprehensive environment for planning, implementing, testing, and reviewing code.
 
 ## User Preferences
 - Dark theme by default (IDE-focused design)
@@ -28,201 +11,63 @@ For detailed installation instructions, see [LOCAL_INSTALL.md](./LOCAL_INSTALL.m
 ## System Architecture
 
 ### Frontend (React + TypeScript)
-The frontend provides a rich interactive development environment. Key components include:
-- **Workspace Header**: A Replit-style tab bar for navigation between Editor, Preview, Database, Secrets, Console, Shell, Developer, and AI Agents panels.
-- **Monaco Editor**: A professional code editor offering syntax highlighting, IntelliSense, and comprehensive editing functionalities.
-- **File Tree**: A collapsible file explorer for project navigation and file operations (save, new file/folder, rename, delete, duplicate, copy path).
-- **Settings System**: Persistent configuration managed via `.simpleaide/settings.json`, with dedicated tabs for General and Editor settings.
-- **Encrypted Secrets Vault**: Secure storage for sensitive information like API keys, encrypted using AES-256-GCM and protected by a master password.
-- **AI Team Panel**: A sidebar facilitating AI task execution (Plan, Implement, Test, Review) and displaying action cards with model/backend metadata.
-- **AI Agents Panel**: Configuration interface for managing multiple LLM backends and assigning them to specialized roles (Planner, Coder, Reviewer, TestFixer, Doc), each with custom model settings.
-- **Terminal Panel**: A resizable output panel with three states (expanded/collapsed/hidden) for displaying logs and command output.
-- **Shell Panel**: Interactive PTY shell with xterm.js, featuring WebSocket-based communication, auto-resize, and reconnection support. Disabled in PROD mode for security.
-- **Diff Viewer**: Integrated display for reviewing AI-generated code changes before application.
-- **Database Panel**: UI for SQLite database management, including table viewing, inline editing, and SQL execution. Enforces read-only mode in PROD environment (blocks INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/TRUNCATE).
-- **Command Palette**: A quick-access interface (Ctrl+K) for searching files, switching tabs, initiating AI actions, and navigating settings.
-- **Theme Provider**: Supports dark and light themes for the IDE.
+The frontend delivers a rich interactive development environment with key components like a Workspace Header for navigation, a Monaco Editor for code editing, a File Tree for project navigation, and a Settings System for persistent configuration. It features an Encrypted Secrets Vault for secure storage, an AI Team Panel for task execution, and an AI Agents Panel for managing LLM backends. Other notable features include a Terminal Panel, Shell Panel, Diff Viewer, Database Panel for SQLite management, and a Command Palette for quick access to functionalities. The UI supports dark/light themes and project selection/management.
+
+### Project Management System
+Projects are stored in a `projects/` directory, each with isolated workspaces and metadata. An active project is tracked for session persistence, and all file system operations are scoped to the active project's directory. The system includes API endpoints for listing, creating, activating, and deleting projects, with robust security measures against path traversal.
 
 ### Backend (Express + TypeScript)
-The backend provides API services for file system operations, AI orchestration, settings management, and data persistence.
-- **File System API**: Endpoints for reading, writing, creating, renaming, deleting, and duplicating files and folders.
-- **AI Orchestration**: Routes requests to configured AI agents based on roles, managing model configurations, and handling fallbacks.
-- **Secrets Management**: APIs for creating, unlocking, locking, and managing encrypted secrets.
-- **Database Management**: Endpoints for SQLite database operations, including listing databases, table schemas, row manipulation, and raw SQL execution.
-- **Task Runner**: Manages the execution of AI tasks and persistence of task artifacts and runs.
-- **Ollama Integration**: Adapter for interacting with Ollama-compatible LLM backends.
-- **Shell WebSocket Server**: PTY-based shell sessions via WebSocket (/api/shell/ws) using node-pty for spawning pseudo-terminals.
-
-### Shared Components
-- **Schema**: TypeScript types and Zod schemas for ensuring data consistency between frontend and backend.
+The backend provides API services for file system operations, AI orchestration, settings management, and data persistence. It includes a File System API, AI Orchestration for routing requests to configured agents, and APIs for Secrets Management and Database Management. A Task Runner manages AI task execution and artifact persistence, with an Ollama Integration for LLM backends and a Shell WebSocket Server for PTY-based shell sessions.
 
 ### AI Agents System
-- **Role-Based Agents**: 5 specialized roles (Planner, Coder, Reviewer, TestFixer, Doc) can be configured with specific LLM backends, models, temperature, and context length.
-- **Orchestrator**: Routes AI requests based on the agent's role configuration, defaulting to general settings or the first available backend if specific configurations are absent.
-- **Fast/Accurate Toggle**: Allows dynamic switching between different AI model configurations for task execution.
+The system employs five role-based agents (Planner, Coder, Reviewer, TestFixer, Doc), each configurable with specific LLM backends, models, temperature, and context length. An Orchestrator routes AI requests, supporting a Fast/Accurate Toggle for dynamic model switching.
 
 ### Workflow Engine
-- **Task Modes**: Supports Plan, Implement, Test, Review, and Verify modes for structured AI interaction.
-- **Autonomous Workflow**: Automates a sequence of Plan → Code → Apply → Test → Fix → Review, including file backups and test-fix retry loops for robust development.
-- **Run Storage**: Stores workflow run metadata, step details, and artifacts in `.simpleaide/runs/` for traceability and re-execution.
+The workflow engine supports Plan, Implement, Test, Review, and Verify task modes. It automates a sequence of Plan → Code → Apply → Test → Fix → Review, including file backups and test-fix retry loops. Workflow run metadata, step details, and artifacts are stored for traceability.
 
 ### Code Editing Reliability System
-The agent code editing pipeline includes several reliability enhancements:
-
-- **Repo Snapshot** (`server/repoSnapshot.ts`): Before generating code, captures:
-  - File tree structure (respects common ignore patterns)
-  - Target file contents with hash and line count
-  - Provides context to AI for accurate diff generation
-
-- **Patch Validator** (`server/patchValidator.ts`): Validates diffs before applying:
-  - Checks file existence (modify existing, create new)
-  - Validates new-file format (`--- /dev/null`)
-  - Detects path traversal attempts
-  - Reports validation errors and warnings
-
-- **Enhanced Apply**: The `applyDiff` function supports:
-  - Standard file modifications via `git apply`
-  - New file creation (`--- /dev/null`)
-  - File deletion (`+++ /dev/null`)
-  - Returns list of modified files
-
-- **Verify Step**: Runs configured test/build commands after applying changes:
-  - Captures exit code, stdout, stderr, and duration
-  - Supports any command (npm test, pytest, etc.)
-
-- **TestFixer Retry Loop**: Auto-fixes failing tests (max 3 attempts):
-  - Captures failure logs and feeds to AI
-  - Generates fix diffs with repo context
-  - Validates and applies fixes iteratively
-  - Stores all attempt artifacts for debugging
+The code editing pipeline includes several reliability enhancements:
+- **Repo Snapshot**: Captures file tree structure and target file contents for AI context.
+- **Patch Validator**: Validates diffs before application, checking file existence, format, and preventing path traversal.
+- **Enhanced Apply**: Supports standard file modifications, creation, and deletion via `git apply`.
+- **Verify Step**: Runs configured test/build commands post-application.
+- **TestFixer Retry Loop**: Automatically fixes failing tests with a retry mechanism, feeding failure logs to AI and applying generated fixes iteratively.
 
 ### Trust Hardening System
-The agent code editing pipeline includes comprehensive trust hardening features to ensure safe code changes:
-
-- **Trust Settings** (`shared/schema.ts`): Configurable limits stored in `.simpleaide/settings.json`:
-  - `autoFixEnabled`: Master toggle for auto-fix (default: OFF)
-  - `maxFixAttempts`: Maximum retry attempts for TestFixer (default: 3)
-  - `maxFilesPerPatch`: Maximum files per patch (default: 10)
-  - `maxLinesPerPatch`: Maximum total line changes (default: 500)
-  - `sensitivePaths`: Glob patterns requiring confirmation (default: server/**, scripts/**, .env*, etc.)
-  - `verifyAllowlist`: Commands allowed for verification (plus package.json scripts)
-
-- **Patch Safety Limits** (`server/patchValidator.ts`):
-  - Counts files and lines in each patch
-  - Blocks patches exceeding configured limits
-  - Reports clear "found X, limit Y" errors
-  - All patches validated: initial implement AND TestFixer retries
-
-- **Dangerous Change Detection**:
-  - Detects file deletions and sensitive path edits
-  - Flags `requiresConfirmation` with detailed `dangerSummary`
-  - Blocks auto-apply of dangerous changes in TestFixer loop
-
-- **Confirmation Token System** (`server/routes.ts`):
-  - Server generates signed nonce tokens for dangerous changes
-  - Tokens expire after 10 minutes
-  - HTTP 428 response triggers frontend confirmation dialog
-  - Re-POST with valid token allows application
-
-- **Git Apply Hardening**:
-  - Checks git availability at startup
-  - Uses `--check` dry run before actual apply
-  - Uses `--whitespace=nowarn` to prevent whitespace failures
-  - Resolves repo root directory for consistent cwd
-
-- **Verify Command Allowlist**:
-  - Only commands from settings allowlist or package.json scripts are executed
-  - Never executes model-provided commands directly
-  - Blocks unauthorized command execution
-
-- **Enhanced Artifact Saving**:
-  - `validation_report.json`: Patch validation results per attempt
-  - `applied_files.txt`: List of files modified
-  - `verify_log.txt`: Detailed verification output
-  - `fix_dangerous_X.json`: Logs for blocked dangerous changes
-
-- **Settings UI** (`client/src/components/SettingsModal.tsx`):
-  - Trust tab for configuring all safety limits
-  - Auto-fix toggle with max attempts slider
-  - Max files/lines per patch sliders
-  - Sensitive paths pattern editor
-  - Verify command allowlist editor
-
-- **Dangerous Change Dialog** (`client/src/components/DangerousChangeDialog.tsx`):
-  - Shows deleted files and sensitive path modifications
-  - Requires explicit user confirmation before applying
-  - Displays clear warning with file lists
+The system includes comprehensive trust hardening features for secure code changes:
+- **Trust Settings**: Configurable limits in `.simpleaide/settings.json` for auto-fix, max attempts, max files/lines per patch, sensitive paths, and a verify allowlist.
+- **Patch Safety Limits**: Blocks patches exceeding configured file and line limits.
+- **Dangerous Change Detection**: Flags file deletions and sensitive path edits, requiring user confirmation.
+- **Confirmation Token System**: Server-generated, time-limited nonce tokens for dangerous changes, requiring re-POST with a valid token for application.
+- **Git Apply Hardening**: Uses `git apply --check` for dry runs and `--whitespace=nowarn`.
+- **Verify Command Allowlist**: Executes only pre-approved commands or package.json scripts.
+- **Enhanced Artifact Saving**: Saves detailed logs and reports for validation, applied files, verification, and blocked dangerous changes.
+- **Settings UI**: Provides a user interface for configuring all safety limits.
+- **Dangerous Change Dialog**: Displays clear warnings and requires explicit user confirmation for critical changes.
 
 ### Real-Time Agent Visibility System
-The application includes a real-time agent activity monitoring system (Nanocoder-inspired improvements):
-
-- **Agent Profiles Database** (`server/aiDb.ts`):
-  - SQLite tables for agent_profiles, ai_runs, and ai_run_events
-  - Stores 5 seeded agent roles: Planner, Coder, Reviewer, TestFixer, Doc
-  - Extended profile fields: model, max_context_tokens, default_temperature, tools_enabled, system_prompt, enabled
-  - Indexed for fast event queries by run_id and agent_role
-
-- **Event Emitter** (`server/aiEvents.ts`):
-  - In-process pub/sub for real-time event broadcasting
-  - Event types: RUN_STATUS, AGENT_STATUS, STEP, READ_FILE, WRITE_FILE, TOOL_CALL, ERROR, PROPOSE_CHANGESET, NEEDS_APPROVAL
-  - StepProgress interface for progress tracking: step_index, step_total, phase
-  - Dual-write to database and SSE broadcast
-  - Fast/Accurate mode telemetry filtering:
-    - Critical events (RUN_STATUS, ERROR, NEEDS_APPROVAL, AGENT_STATUS, PROPOSE_CHANGESET) always emit
-    - Verbose events (READ_FILE, TOOL_CALL, NOTE) are skipped when run is in fast_mode
-    - STEP and WRITE_FILE events emit in both modes
-
-- **Granular Event Emissions** (`server/taskRunner.ts`):
-  - emitReadFile: Emits for each file during repo snapshot capture
-  - emitWriteFile: Emits for each file modified by patch apply
-  - emitToolCall: Emits for verification commands (pytest, npm test, etc.)
-  - emitProposeChangeset: Emits when diffs are generated with file list
-  - "done" status: Emitted after agent completes (plan, implement, review, test)
-  - Progress tracking: Step indices for plan (1-2), implement (1-4), verify phases
-
-- **SSE Streaming Endpoint** (`/api/ai/stream`):
-  - Server-Sent Events for real-time updates
-  - Init event sends current runs, events, and agent profiles
-  - 30-second heartbeat with reconnection support
-  - Fallback polling at `/api/ai/runs/:id/events`
-
-- **Agent Roster UI** (`client/src/components/AgentRosterCard.tsx`):
-  - Visual agent cards with status indicators (idle, working, waiting, done, error)
-  - Color-coded avatars with role-specific emojis
-  - Model badges showing configured LLM model per agent
-  - Compact and expanded display modes
-
-- **Activity Timeline** (`client/src/components/ActivityTimeline.tsx`):
-  - Real-time event feed with timestamp formatting
-  - Event-type icons and color coding
-  - Progress indicators: Shows [phase] step X/Y for STEP events
-  - Agent attribution with profile colors
-  - ScrollArea with auto-scroll behavior
-
-- **SSE Hook** (`client/src/hooks/useAIRunEvents.ts`):
-  - React hook for SSE subscription
-  - Auto-reconnect on connection loss
-  - State management for events, runs, and agent profiles
-  - Extended AgentProfile type with model/context/temperature fields
+A real-time agent activity monitoring system provides visibility into AI operations:
+- **Agent Profiles Database**: SQLite tables store agent profiles and run events.
+- **Event Emitter**: In-process pub/sub for real-time event broadcasting, dual-writing to the database and SSE broadcast.
+- **Granular Event Emissions**: Emits detailed events for file operations, tool calls, changeset proposals, and progress tracking.
+- **SSE Streaming Endpoint**: Server-Sent Events for real-time updates with heartbeat and reconnection support.
+- **Agent Roster UI**: Visual agent cards with status indicators, color-coded avatars, and model badges.
+- **Activity Timeline**: Real-time event feed with timestamping, event-type icons, and progress indicators.
 
 ### Security
-- **Encryption**: AES-256-GCM for secrets with PBKDF2 for key derivation.
-- **File Permissions**: Strict file permissions (0600) for sensitive files and backups.
-- **Path Traversal Prevention**: Safeguards against directory traversal attacks.
-- **Environment Detection**: SIMPLEAIDE_ENV overrides NODE_ENV for environment detection (supports "prod"/"production"). Status header shows both values for debugging.
-- **PROD Restrictions**: Database is read-only in PROD (blocks all write operations). Shell access is disabled in PROD.
+Security measures include AES-256-GCM encryption for secrets, strict file permissions, path traversal prevention, environment detection (`SIMPLEAIDE_ENV`), and production environment restrictions (read-only database, disabled shell access).
 
 ## External Dependencies
-- **Ollama**: Local LLM (Large Language Model) backend for AI functionalities. Default `http://localhost:11434` with `codellama` model.
-- **Monaco Editor**: Code editor component.
-- **TanStack Query**: Data fetching and state management in the frontend.
-- **Tailwind CSS**: Utility-first CSS framework for styling.
+- **Ollama**: Local LLM backend.
+- **Monaco Editor**: Code editor.
+- **TanStack Query**: Frontend data fetching and state management.
+- **Tailwind CSS**: Utility-first CSS framework.
 - **shadcn/ui**: UI component library.
-- **Express.js**: Backend web application framework.
+- **Express.js**: Backend web framework.
 - **React**: Frontend JavaScript library.
-- **TypeScript**: Superset of JavaScript for type safety.
-- **Node.js**: JavaScript runtime environment (version 18+ recommended).
-- **SQLite**: Database engine for project databases.
-- **Kaggle API**: Integration for Kaggle services, requiring `KAGGLE_API_KEY`.
-- **HuggingFace API**: Integration for HuggingFace services, requiring `HUGGINGFACE_TOKEN`.
-- **NVIDIA NGC API**: Integration for NVIDIA NGC services, requiring `NGC_API_KEY`.
+- **TypeScript**: For type safety.
+- **Node.js**: JavaScript runtime environment.
+- **SQLite**: Database engine.
+- **Kaggle API**: For Kaggle services.
+- **HuggingFace API**: For HuggingFace services.
+- **NVIDIA NGC API**: For NVIDIA NGC services.
