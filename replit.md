@@ -9,6 +9,7 @@ SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-
 - Diff-first workflow (agents propose changes, users apply)
 
 ## Recent Changes (January 2026)
+- **Git Repo Import v1**: Import existing repositories with multi-step wizard UI, PAT authentication via GIT_ASKPASS, stack detection (Node/Python/Go/Rust), automatic bootstrap file generation (.simpleaide/project.md, runpolicy.json, immutable.json, capabilities.json), and FTS5 search index building
 - **Enhanced Status Strip**: Bloomberg-style status bar with CTX (context files), RUN (agent state), and Saved/Unsaved chips; left/right grouping for workspace vs infrastructure status
 - **Settings Modal AI Tab**: Added 4th tab for AI defaults (action, speed, diff preview, confirm destructive)
 - **Context Manager Drawer**: Visualize/manage AI file context with pin/search/clear functionality

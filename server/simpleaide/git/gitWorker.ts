@@ -26,6 +26,7 @@ export interface CloneOptions {
   pat?: string;
   depth?: number;
   recurseSubmodules?: boolean;
+  opId?: string;
 }
 
 export interface CloneResult {
@@ -55,7 +56,7 @@ function ensureDir(dir: string): void {
   }
 }
 
-function generateOpId(): string {
+export function generateOpId(): string {
   return `gitop_${crypto.randomBytes(8).toString("hex")}`;
 }
 
@@ -70,7 +71,7 @@ function appendLog(logPath: string, message: string): void {
 }
 
 export async function cloneRepository(options: CloneOptions): Promise<CloneResult> {
-  const { projectId, projectName, url, branch, authRef, pat, depth = 1, recurseSubmodules = true } = options;
+  const { projectId, projectName, url, branch, authRef, pat, depth = 1, recurseSubmodules = true, opId: providedOpId } = options;
   
   let validated: ValidatedUrl;
   try {
@@ -79,10 +80,12 @@ export async function cloneRepository(options: CloneOptions): Promise<CloneResul
     return { success: false, gitOpId: "", error: error.message };
   }
   
-  const opId = generateOpId();
+  const opId = providedOpId || generateOpId();
   const logPath = getLogPath(opId);
   
-  createGitOp({ id: opId, project_id: projectId, op: "clone" });
+  if (!providedOpId) {
+    createGitOp({ id: opId, project_id: projectId, op: "clone" });
+  }
   appendLog(logPath, `Starting clone for project: ${projectId}`);
   appendLog(logPath, `URL: ${validated.sanitizedUrl}`);
   appendLog(logPath, `Provider: ${validated.provider}`);

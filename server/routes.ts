@@ -41,7 +41,8 @@ import { templateToolDefinitions, dispatchTemplateTool } from "./simpleaide/tool
 import { cloneRepository, pullRepository, getGitOpStatus, getGitOpLogTail } from "./simpleaide/git/gitWorker";
 import { bootstrapProject } from "./simpleaide/git/bootstrap";
 import { validateRemoteUrl } from "./simpleaide/git/gitUrl";
-import { listGitOps, getProjectRemote, getGitOp } from "./simpleaide/db";
+import { listGitOps, getProjectRemote, getGitOp, createGitOp } from "./simpleaide/db";
+import { generateOpId } from "./simpleaide/git/gitWorker";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -3143,6 +3144,31 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/v1/git/validate-url", (req: Request, res: Response) => {
+    try {
+      const { url } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ valid: false, error: "url is required" });
+      }
+      
+      try {
+        const validated = validateRemoteUrl(url);
+        res.json({
+          valid: true,
+          sanitizedUrl: validated.sanitizedUrl,
+          provider: validated.provider,
+          owner: validated.owner,
+          repo: validated.repo,
+        });
+      } catch (error: any) {
+        res.json({ valid: false, error: error.message });
+      }
+    } catch (error: any) {
+      res.status(500).json({ valid: false, error: error.message });
+    }
+  });
+
   app.post("/api/v1/projects/import/git", async (req: Request, res: Response) => {
     try {
       const { name, git, auth, options = {}, bootstrap: bootstrapOpts = {} } = req.body;
@@ -3171,10 +3197,14 @@ export async function registerRoutes(
         }
       }
       
+      const gitOpId = generateOpId();
+      createGitOp({ id: gitOpId, project_id: projectId, op: "clone" });
+      
       res.status(202).json({
         ok: true,
         data: {
           projectId,
+          gitOpId,
           status: "queued",
           message: "Clone operation started. Poll /api/v1/projects/:projectId/git/ops for status."
         }
@@ -3191,6 +3221,7 @@ export async function registerRoutes(
             pat,
             depth: options.depth ?? 1,
             recurseSubmodules: options.recurseSubmodules ?? true,
+            opId: gitOpId,
           });
           
           if (cloneResult.success && cloneResult.projectPath) {

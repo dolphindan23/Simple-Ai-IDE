@@ -30,6 +30,7 @@ interface ImportResult {
   ok: boolean;
   data?: {
     projectId: string;
+    gitOpId: string;
     status: string;
     message: string;
   };
@@ -79,7 +80,7 @@ export function ImportRepoModal({ open, onOpenChange, onImported }: ImportRepoMo
 
   const validateMutation = useMutation({
     mutationFn: async (gitUrl: string) => {
-      const response = await apiRequest("POST", "/api/v1/projects/test-project-1-ml0io8yy/git/validate-url", { url: gitUrl });
+      const response = await apiRequest("POST", "/api/v1/git/validate-url", { url: gitUrl });
       return response.json() as Promise<ValidationResult>;
     },
     onSuccess: (data) => {
@@ -104,14 +105,22 @@ export function ImportRepoModal({ open, onOpenChange, onImported }: ImportRepoMo
     onSuccess: (data) => {
       if (data.ok && data.data) {
         setImportedProjectId(data.data.projectId);
+        if (data.data.gitOpId) {
+          setGitOpId(data.data.gitOpId);
+        }
         setStep("progress");
       }
     },
   });
 
-  const { data: gitOpStatus, refetch: refetchGitOp } = useQuery<GitOp>({
-    queryKey: ["/api/v1/projects", importedProjectId, "git/ops", gitOpId],
-    enabled: !!importedProjectId && step === "progress",
+  const { data: gitOpStatus } = useQuery<GitOp>({
+    queryKey: ["git-op-status", importedProjectId, gitOpId],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/projects/${importedProjectId}/git/ops/${gitOpId}`);
+      if (!response.ok) throw new Error("Failed to fetch git op status");
+      return response.json();
+    },
+    enabled: !!importedProjectId && !!gitOpId && step === "progress",
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data?.status === "succeeded" || data?.status === "failed") {
@@ -120,18 +129,6 @@ export function ImportRepoModal({ open, onOpenChange, onImported }: ImportRepoMo
       return 1000;
     },
   });
-
-  const { data: gitOps } = useQuery<{ ops: GitOp[] }>({
-    queryKey: ["/api/v1/projects", importedProjectId, "git/ops"],
-    enabled: !!importedProjectId && step === "progress" && !gitOpId,
-    refetchInterval: 1000,
-  });
-
-  useEffect(() => {
-    if (gitOps?.ops && gitOps.ops.length > 0 && !gitOpId) {
-      setGitOpId(gitOps.ops[0].id);
-    }
-  }, [gitOps, gitOpId]);
 
   const handleValidateUrl = () => {
     if (url.trim()) {
@@ -261,7 +258,7 @@ export function ImportRepoModal({ open, onOpenChange, onImported }: ImportRepoMo
   );
 
   const renderProgressStep = () => {
-    const op = gitOpStatus || gitOps?.ops?.[0];
+    const op = gitOpStatus;
     const isComplete = op?.status === "succeeded";
     const isFailed = op?.status === "failed";
 
