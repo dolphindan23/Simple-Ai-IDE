@@ -7,7 +7,8 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
-import { HeaderStatus } from "@/components/HeaderStatus";
+import { HeaderStatus, RunState } from "@/components/HeaderStatus";
+import { useAIRunEvents } from "@/hooks/useAIRunEvents";
 import { FileTabsBar } from "@/components/FileTabsBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useTheme } from "@/components/ThemeProvider";
@@ -100,6 +101,49 @@ export default function IDEPage() {
   useEffect(() => {
     localStorage.setItem("simpleaide-context-files", JSON.stringify(contextFiles));
   }, [contextFiles]);
+  
+  // AI Run Events for status bar
+  const { events: aiEvents, runs: aiRuns } = useAIRunEvents();
+  
+  // Derive global run state from AI events and runs
+  const deriveRunState = useCallback((): RunState => {
+    // Check for active runs
+    const activeRun = aiRuns.find(r => r.status === "running" || r.status === "pending");
+    if (activeRun) {
+      // Check if waiting for approval
+      const recentEvents = aiEvents
+        .filter(e => e.run_id === activeRun.id)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      if (recentEvents.length > 0) {
+        const latest = recentEvents[0];
+        if (latest.event_type === "NEEDS_APPROVAL") return "waiting";
+        if (latest.event_type === "ERROR") return "error";
+      }
+      return "running";
+    }
+    
+    // Check last completed run
+    const lastRun = aiRuns
+      .filter(r => r.status === "completed" || r.status === "failed" || r.status === "error")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    
+    if (lastRun) {
+      // Only show done/error if recent (within last 30 seconds)
+      const ageMs = Date.now() - new Date(lastRun.created_at).getTime();
+      if (ageMs < 30000) {
+        if (lastRun.status === "failed" || lastRun.status === "error") return "error";
+        if (lastRun.status === "completed") return "done";
+      }
+    }
+    
+    return "idle";
+  }, [aiEvents, aiRuns]);
+  
+  const runState = deriveRunState();
+  
+  // Compute workspace dirty state from open files
+  const workspaceDirty = openFiles.some(f => f.isDirty);
   
   // Persist terminal state
   useEffect(() => {
@@ -947,6 +991,11 @@ export default function IDEPage() {
                   onNavigate={handleTabChange} 
                   showMainHeader={showMainHeader}
                   onToggleMainHeader={() => setShowMainHeader(!showMainHeader)}
+                  contextFilesCount={contextFiles.length}
+                  onOpenContextManager={() => setShowContextManager(true)}
+                  runState={runState}
+                  onOpenActivityTimeline={() => handleTabChange("runs")}
+                  isDirty={workspaceDirty}
                 />
               </div>
               

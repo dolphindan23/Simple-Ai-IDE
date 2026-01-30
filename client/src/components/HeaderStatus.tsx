@@ -9,10 +9,19 @@ import {
   Play,
   AlertCircle,
   PanelTopClose,
-  PanelTop
+  PanelTop,
+  Files,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Save,
+  Circle
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WorkspaceTab } from "./WorkspaceHeader";
+
+export type RunState = "idle" | "running" | "waiting" | "error" | "done";
 
 interface StatusResponse {
   env: "DEV" | "PROD";
@@ -66,9 +75,10 @@ interface StatusChipProps {
   icon: typeof Server;
   tooltip: string;
   onClick?: () => void;
+  animate?: boolean;
 }
 
-function StatusChip({ label, status, icon: Icon, tooltip, onClick }: StatusChipProps) {
+function StatusChip({ label, status, icon: Icon, tooltip, onClick, animate }: StatusChipProps) {
   const statusColors = {
     success: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
     warning: "bg-amber-500/10 text-amber-400 border-amber-500/30",
@@ -94,9 +104,9 @@ function StatusChip({ label, status, icon: Icon, tooltip, onClick }: StatusChipP
             statusColors[status],
             onClick ? "cursor-pointer" : "cursor-default"
           )}
-          data-testid={`status-chip-${label.toLowerCase().replace(/\s/g, "-")}`}
+          data-testid={`status-chip-${label.toLowerCase().replace(/\s/g, "-").replace(/[:/]/g, "")}`}
         >
-          <Icon className="h-2.5 w-2.5" />
+          <Icon className={cn("h-2.5 w-2.5", animate && "animate-spin")} />
           <span>{label}</span>
           <span className={cn("w-1 h-1 rounded-full", statusDots[status])} />
         </button>
@@ -112,9 +122,23 @@ interface HeaderStatusProps {
   onNavigate: (tab: WorkspaceTab) => void;
   showMainHeader: boolean;
   onToggleMainHeader: () => void;
+  contextFilesCount?: number;
+  onOpenContextManager?: () => void;
+  runState?: RunState;
+  onOpenActivityTimeline?: () => void;
+  isDirty?: boolean;
 }
 
-export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }: HeaderStatusProps) {
+export function HeaderStatus({ 
+  onNavigate, 
+  showMainHeader, 
+  onToggleMainHeader,
+  contextFilesCount = 0,
+  onOpenContextManager,
+  runState = "idle",
+  onOpenActivityTimeline,
+  isDirty = false,
+}: HeaderStatusProps) {
   const { data: status, isLoading, error } = useQuery<StatusResponse>({
     queryKey: ["/api/status"],
     refetchInterval: 5000,
@@ -174,14 +198,53 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
     return `${status.llm.online}/${status.llm.total} backends online.`;
   };
 
-  const getRunsTooltip = () => {
-    if (!status.runs.last) return "No workflow runs yet.";
-    if (status.runs.busy) {
-      return `${status.runs.active} run${status.runs.active !== 1 ? "s" : ""} in progress.`;
+  const getRunStateConfig = (): { label: string; status: "success" | "warning" | "error" | "neutral"; icon: typeof Play; tooltip: string; animate?: boolean } => {
+    switch (runState) {
+      case "running":
+        return {
+          label: "RUN: active",
+          status: "success",
+          icon: Loader2,
+          tooltip: "Agent is currently running a task. Click to view activity.",
+          animate: true,
+        };
+      case "waiting":
+        return {
+          label: "RUN: waiting",
+          status: "warning",
+          icon: Clock,
+          tooltip: "Agent is waiting for approval or input. Click to view.",
+          animate: false,
+        };
+      case "error":
+        return {
+          label: "RUN: error",
+          status: "error",
+          icon: XCircle,
+          tooltip: "Last run encountered an error. Click to view details.",
+          animate: false,
+        };
+      case "done":
+        return {
+          label: "RUN: done",
+          status: "success",
+          icon: CheckCircle2,
+          tooltip: "Last run completed successfully. Click to view.",
+          animate: false,
+        };
+      case "idle":
+      default:
+        return {
+          label: "RUN: idle",
+          status: "neutral",
+          icon: Circle,
+          tooltip: "No active runs. Click to view activity timeline.",
+          animate: false,
+        };
     }
-    const lastStatus = status.runs.last.status;
-    return `Last run: ${lastStatus}. Click to view runs.`;
   };
+
+  const runConfig = getRunStateConfig();
 
   return (
     <div className="flex items-center gap-1">
@@ -205,6 +268,7 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
         </TooltipContent>
       </Tooltip>
 
+      {/* Left group: workspace + AI state */}
       <StatusChip
         label={status.env}
         status={status.env === "PROD" ? "warning" : "neutral"}
@@ -212,6 +276,30 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
         tooltip={`Environment: ${status.env}${status.envDetails?.simpleaideEnv ? ` (SIMPLEAIDE_ENV=${status.envDetails.simpleaideEnv})` : ''} | NODE_ENV=${status.envDetails?.nodeEnv || 'development'}. Up ${formatUptime(status.server.uptime)}.`}
       />
 
+      <StatusChip
+        label={`CTX: ${contextFilesCount}`}
+        status={contextFilesCount > 0 ? "success" : "neutral"}
+        icon={Files}
+        tooltip={contextFilesCount > 0 
+          ? `${contextFilesCount} file${contextFilesCount !== 1 ? 's' : ''} included in AI context. Click to manage.`
+          : "No files in AI context. Click to add files."
+        }
+        onClick={onOpenContextManager}
+      />
+
+      <StatusChip
+        label={runConfig.label}
+        status={runConfig.status}
+        icon={runConfig.icon}
+        tooltip={runConfig.tooltip}
+        onClick={onOpenActivityTimeline}
+        animate={runConfig.animate}
+      />
+
+      {/* Separator */}
+      <div className="h-3 w-px bg-border mx-0.5" />
+
+      {/* Right group: infrastructure + capacity */}
       <StatusChip
         label="Vault"
         status={
@@ -254,15 +342,15 @@ export function HeaderStatus({ onNavigate, showMainHeader, onToggleMainHeader }:
         onClick={() => onNavigate("ai-agents")}
       />
 
-      {status.runs.busy && (
-        <StatusChip
-          label={`Run ${status.runs.active}`}
-          status="success"
-          icon={Play}
-          tooltip={getRunsTooltip()}
-          onClick={() => onNavigate("runs")}
-        />
-      )}
+      <StatusChip
+        label={isDirty ? "Unsaved" : "Saved"}
+        status={isDirty ? "warning" : "neutral"}
+        icon={Save}
+        tooltip={isDirty 
+          ? "You have unsaved changes. Use Ctrl+S to save."
+          : "All changes saved."
+        }
+      />
     </div>
   );
 }
