@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { FileTree } from "@/components/FileTree";
+import { ProjectSelector } from "@/components/ProjectSelector";
 import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
@@ -1015,18 +1016,29 @@ export default function IDEPage() {
                 )}
               </div>
               {!explorerCollapsed && (
-                <div className="flex-1 overflow-hidden">
-                  <FileTree
-                    files={files}
-                    selectedPath={selectedFile}
-                    onSelectFile={handleSelectFile}
-                    onRename={handleRenameFromTree}
-                    onDelete={handleDeleteFromTree}
-                    onCopyPath={handleCopyPath}
-                    onNewFile={handleNewFileInFolder}
-                    onNewFolder={handleNewFolderInFolder}
-                  />
-                </div>
+                <>
+                  <div className="px-2 py-1.5 border-b border-sidebar-border">
+                    <ProjectSelector 
+                      onProjectChange={() => {
+                        setSelectedFile(null);
+                        setOpenFiles([]);
+                        setFileContent("");
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <FileTree
+                      files={files}
+                      selectedPath={selectedFile}
+                      onSelectFile={handleSelectFile}
+                      onRename={handleRenameFromTree}
+                      onDelete={handleDeleteFromTree}
+                      onCopyPath={handleCopyPath}
+                      onNewFile={handleNewFileInFolder}
+                      onNewFolder={handleNewFolderInFolder}
+                    />
+                  </div>
+                </>
               )}
             </div>
           </ResizablePanel>

@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { runTask, applyTaskDiff, checkGitAvailable, getDefaultTrustSettings, type ApplyDiffOptions, type ApplyDiffResult } from "./taskRunner";
-import { createTaskSchema, settingsSchema, defaultSettings, type Settings, createRunSchema, executeStepSchema, rerunSchema } from "@shared/schema";
+import { createTaskSchema, settingsSchema, defaultSettings, type Settings, createRunSchema, executeStepSchema, rerunSchema, createProjectSchema, projectSchema, type Project, activeProjectSchema } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { vaultExists, createVault, unlockVault, saveVault, setSecret, deleteSecret, listSecretKeys, maskSecret, deleteVault } from "./secrets";
@@ -16,6 +16,8 @@ import { subscribeToRun, subscribeToAllRuns, emitRunStatus, emitAgentStatus, emi
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
+const PROJECTS_DIR = path.join(PROJECT_ROOT, "projects");
+const ACTIVE_PROJECT_FILE = path.join(SETTINGS_DIR, "active-project.json");
 
 const backendHealthCache = new Map<string, { online: boolean; lastChecked: number; error?: string }>();
 const HEALTH_CACHE_TTL_MS = 60 * 1000;
@@ -148,9 +150,270 @@ export async function registerRoutes(
   // Setup shell WebSocket
   setupShellWebSocket(httpServer);
 
+  // ==================== Project Management Routes ====================
+
+  // Helper to get active project path
+  function getActiveProjectPath(): string | null {
+    try {
+      if (fs.existsSync(ACTIVE_PROJECT_FILE)) {
+        const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_FILE, "utf-8"));
+        const parsed = activeProjectSchema.safeParse(data);
+        if (parsed.success) {
+          const projectPath = path.join(PROJECTS_DIR, parsed.data.projectId);
+          if (fs.existsSync(projectPath)) {
+            return projectPath;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error reading active project:", error);
+    }
+    return null;
+  }
+
+  // Helper to get project metadata
+  function getProjectMetadata(projectId: string): Project | null {
+    const projectPath = path.join(PROJECTS_DIR, projectId);
+    const metaPath = path.join(projectPath, ".simpleaide", "project.json");
+    try {
+      if (fs.existsSync(metaPath)) {
+        const data = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+        return projectSchema.parse(data);
+      }
+    } catch (error) {
+      console.error("Error reading project metadata:", error);
+    }
+    return null;
+  }
+
+  // Helper to save project metadata
+  function saveProjectMetadata(project: Project): void {
+    const projectPath = path.join(PROJECTS_DIR, project.id);
+    const metaDir = path.join(projectPath, ".simpleaide");
+    const metaPath = path.join(metaDir, "project.json");
+    if (!fs.existsSync(metaDir)) {
+      fs.mkdirSync(metaDir, { recursive: true });
+    }
+    fs.writeFileSync(metaPath, JSON.stringify(project, null, 2));
+  }
+
+  // List all projects
+  app.get("/api/projects", (req: Request, res: Response) => {
+    try {
+      if (!fs.existsSync(PROJECTS_DIR)) {
+        return res.json({ projects: [], activeProjectId: null });
+      }
+      
+      const entries = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true });
+      const projects: Project[] = [];
+      
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith(".")) {
+          const meta = getProjectMetadata(entry.name);
+          if (meta) {
+            projects.push(meta);
+          } else {
+            // Create metadata for legacy projects
+            const projectPath = path.join(PROJECTS_DIR, entry.name);
+            const stat = fs.statSync(projectPath);
+            const project: Project = {
+              id: entry.name,
+              name: entry.name,
+              path: projectPath,
+              createdAt: stat.birthtime.toISOString(),
+            };
+            saveProjectMetadata(project);
+            projects.push(project);
+          }
+        }
+      }
+      
+      // Sort by lastOpenedAt or createdAt
+      projects.sort((a, b) => {
+        const aDate = a.lastOpenedAt || a.createdAt;
+        const bDate = b.lastOpenedAt || b.createdAt;
+        return new Date(bDate).getTime() - new Date(aDate).getTime();
+      });
+      
+      // Get active project ID
+      let activeProjectId: string | null = null;
+      try {
+        if (fs.existsSync(ACTIVE_PROJECT_FILE)) {
+          const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_FILE, "utf-8"));
+          activeProjectId = data.projectId || null;
+        }
+      } catch {}
+      
+      res.json({ projects, activeProjectId });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new project
+  app.post("/api/projects", (req: Request, res: Response) => {
+    try {
+      const parsed = createProjectSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      
+      // Generate project ID from name (sanitize for filesystem)
+      const projectId = parsed.data.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 50) + "-" + Date.now().toString(36);
+      
+      const projectPath = path.join(PROJECTS_DIR, projectId);
+      
+      // Ensure projects directory exists
+      if (!fs.existsSync(PROJECTS_DIR)) {
+        fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+      }
+      
+      // Create project directory
+      if (fs.existsSync(projectPath)) {
+        return res.status(409).json({ error: "Project already exists" });
+      }
+      
+      fs.mkdirSync(projectPath, { recursive: true });
+      
+      // Create project metadata
+      const project: Project = {
+        id: projectId,
+        name: parsed.data.name,
+        path: projectPath,
+        createdAt: new Date().toISOString(),
+        lastOpenedAt: new Date().toISOString(),
+      };
+      
+      saveProjectMetadata(project);
+      
+      // Set as active project
+      if (!fs.existsSync(SETTINGS_DIR)) {
+        fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+      }
+      fs.writeFileSync(ACTIVE_PROJECT_FILE, JSON.stringify({ projectId }, null, 2));
+      
+      res.json(project);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get active project
+  app.get("/api/projects/active", (req: Request, res: Response) => {
+    try {
+      if (!fs.existsSync(ACTIVE_PROJECT_FILE)) {
+        return res.json({ project: null });
+      }
+      
+      const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_FILE, "utf-8"));
+      const projectId = data.projectId;
+      
+      if (!projectId) {
+        return res.json({ project: null });
+      }
+      
+      const project = getProjectMetadata(projectId);
+      res.json({ project });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Switch active project
+  app.post("/api/projects/:id/activate", (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Validate project ID doesn't contain path traversal
+      if (!projectId || projectId.includes("..") || projectId.includes("/") || projectId.includes("\\")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const projectPath = path.resolve(PROJECTS_DIR, projectId);
+      
+      // Security check
+      const relativePath = path.relative(PROJECTS_DIR, projectPath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Invalid project path" });
+      }
+      
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // Update lastOpenedAt
+      const project = getProjectMetadata(projectId);
+      if (project) {
+        project.lastOpenedAt = new Date().toISOString();
+        saveProjectMetadata(project);
+      }
+      
+      // Set as active
+      if (!fs.existsSync(SETTINGS_DIR)) {
+        fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+      }
+      fs.writeFileSync(ACTIVE_PROJECT_FILE, JSON.stringify({ projectId }, null, 2));
+      
+      res.json({ success: true, project });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete a project
+  app.delete("/api/projects/:id", (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Validate project ID doesn't contain path traversal
+      if (!projectId || projectId.includes("..") || projectId.includes("/") || projectId.includes("\\")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const projectPath = path.resolve(PROJECTS_DIR, projectId);
+      
+      // Security check: ensure resolved path is within PROJECTS_DIR
+      const relativePath = path.relative(PROJECTS_DIR, projectPath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Invalid project path" });
+      }
+      
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // Remove directory recursively
+      fs.rmSync(projectPath, { recursive: true, force: true });
+      
+      // If this was the active project, clear active project
+      try {
+        if (fs.existsSync(ACTIVE_PROJECT_FILE)) {
+          const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_FILE, "utf-8"));
+          if (data.projectId === projectId) {
+            fs.unlinkSync(ACTIVE_PROJECT_FILE);
+          }
+        }
+      } catch {}
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get files for active project (or root if no project)
+  function getProjectFilesRoot(): string {
+    const activeProjectPath = getActiveProjectPath();
+    return activeProjectPath || process.cwd();
+  }
+
   // File system routes
   app.get("/api/files", (req: Request, res: Response) => {
-    const rootDir = process.cwd();
+    const rootDir = getProjectFilesRoot();
     const tree = getFileTree(rootDir);
     res.json(tree);
   });
@@ -161,7 +424,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check: ensure the path is within the project directory
@@ -324,7 +587,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Content is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check
@@ -352,7 +615,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check
@@ -387,7 +650,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullPath = path.resolve(rootDir, folderPath);
     
     // Security check
@@ -416,7 +679,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Both oldPath and newPath are required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullOldPath = path.resolve(rootDir, oldPath);
     const fullNewPath = path.resolve(rootDir, newPath);
     
@@ -451,7 +714,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullPath = path.resolve(rootDir, targetPath);
     
     // Security check
@@ -491,7 +754,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Source path is required" });
     }
     
-    const rootDir = path.resolve(process.cwd());
+    const rootDir = path.resolve(getProjectFilesRoot());
     const fullSourcePath = path.resolve(rootDir, sourcePath);
     
     // Security check

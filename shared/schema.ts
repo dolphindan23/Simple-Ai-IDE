@@ -307,3 +307,27 @@ export const rerunSchema = z.object({
   fromStep: z.number().min(1),
 });
 export type RerunRequest = z.infer<typeof rerunSchema>;
+
+// ==================== Project Management Types ====================
+
+export const projectSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(100),
+  path: z.string(),
+  createdAt: z.string(),
+  lastOpenedAt: z.string().optional(),
+});
+
+export type Project = z.infer<typeof projectSchema>;
+
+export const createProjectSchema = z.object({
+  name: z.string().min(1, "Project name is required").max(100, "Project name too long"),
+});
+
+export type CreateProject = z.infer<typeof createProjectSchema>;
+
+export const activeProjectSchema = z.object({
+  projectId: z.string(),
+});
+
+export type ActiveProject = z.infer<typeof activeProjectSchema>;
