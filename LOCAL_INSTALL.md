@@ -246,7 +246,10 @@ The GPU compose file includes:
 | `simpleaide_config` | Application config and runtime data (.simpleaide directory) |
 | `simpleaide_projects` | User projects |
 
-**Note:** GPU access uses `runtime: nvidia` which requires the NVIDIA Container Toolkit to be properly configured. If you get GPU errors, verify with:
+**Notes:**
+- GPU access uses both `runtime: nvidia` and `deploy.resources.reservations.devices` for maximum compatibility
+- The app exposes a lightweight `/health` endpoint for Docker health checks (no DB/LLM calls)
+- If you get GPU errors, verify with:
 ```bash
 docker run --rm --runtime=nvidia nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 ```
