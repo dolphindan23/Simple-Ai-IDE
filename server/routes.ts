@@ -33,6 +33,9 @@ import {
   clearApprovalToken
 } from "./simpleaide/git";
 import { buildIndex, getIndexMeta, searchLexical, incrementalUpdate } from "./simpleaide/indexer";
+import { listTemplates, loadTemplate, validateTemplate } from "./simpleaide/templates/engine";
+import { applyTemplateInCapsule } from "./simpleaide/templates/apply";
+import { readCapabilities } from "./simpleaide/capabilities";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -2995,6 +2998,96 @@ export async function registerRoutes(
       const { projectId } = req.params;
       const meta = getIndexMeta(projectId);
       res.json(meta || { indexed: false });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== Template Catalog v1 Routes ====================
+
+  app.get("/api/v1/templates", (_req: Request, res: Response) => {
+    try {
+      const templates = listTemplates();
+      res.json({ templates });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/templates/:templateId", (req: Request, res: Response) => {
+    try {
+      const { templateId } = req.params;
+      const template = loadTemplate(templateId);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      const validation = validateTemplate(template);
+      res.json({ template, validation });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/:projectId/templates/apply", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const { templateId, variables = {}, approvalToken } = req.body;
+      
+      if (!templateId) {
+        return res.status(400).json({ error: "templateId is required" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const result = await applyTemplateInCapsule({
+        projectId,
+        projectPath,
+        templateId,
+        variables,
+        approvalToken
+      });
+      
+      if (result.needsApproval) {
+        return res.status(202).json({
+          status: "needs_approval",
+          runId: result.runId,
+          approvalReasons: result.approvalReasons,
+          createdFiles: result.createdFiles,
+          requiresSecrets: result.requiresSecrets,
+          message: "Some files require approval before writing"
+        });
+      }
+      
+      res.json({
+        status: "applied",
+        runId: result.runId,
+        createdFiles: result.createdFiles,
+        patchSummary: result.patchSummary,
+        capabilitiesUpdated: result.capabilitiesUpdated,
+        requiresSecrets: result.requiresSecrets,
+        postInstallSteps: result.postInstallSteps
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/v1/projects/:projectId/capabilities", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const projectPath = getProjectPath(projectId);
+      
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const capabilities = readCapabilities(projectPath);
+      res.json(capabilities);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
