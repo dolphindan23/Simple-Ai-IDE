@@ -34,7 +34,7 @@ export function ensureGitRepo(repoPath: string): boolean {
   if (isGitRepo(repoPath)) return true;
   
   try {
-    execSync("git init", { cwd: repoPath, stdio: "pipe" });
+    execSync("git init --initial-branch=main", { cwd: repoPath, stdio: "pipe" });
     
     const gitignorePath = path.join(repoPath, ".gitignore");
     if (!fs.existsSync(gitignorePath)) {
@@ -51,6 +51,34 @@ export function ensureGitRepo(repoPath: string): boolean {
   } catch (e) {
     console.error(`[worktrees] Failed to init git repo at ${repoPath}:`, e);
     return false;
+  }
+}
+
+export function getDefaultBranch(repoPath: string): string {
+  if (!isGitRepo(repoPath)) return "main";
+  
+  try {
+    const result = spawnSync("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd: repoPath,
+      encoding: "utf-8",
+    });
+    
+    if (result.status === 0 && result.stdout.trim()) {
+      return result.stdout.trim();
+    }
+    
+    const branchResult = spawnSync("git", ["branch", "--show-current"], {
+      cwd: repoPath,
+      encoding: "utf-8",
+    });
+    
+    if (branchResult.status === 0 && branchResult.stdout.trim()) {
+      return branchResult.stdout.trim();
+    }
+    
+    return "main";
+  } catch (e) {
+    return "main";
   }
 }
 
@@ -122,6 +150,8 @@ export function createWorktree(
     }
   }
   
+  const actualBaseBranch = baseBranch === "main" ? getDefaultBranch(repoPath) : baseBranch;
+  
   if (!fs.existsSync(worktreesDir)) {
     fs.mkdirSync(worktreesDir, { recursive: true });
   }
@@ -142,7 +172,7 @@ export function createWorktree(
     if (branchExists) {
       args = ["worktree", "add", worktreePath, branchName];
     } else {
-      args = ["worktree", "add", "-b", branchName, worktreePath, baseBranch];
+      args = ["worktree", "add", "-b", branchName, worktreePath, actualBaseBranch];
     }
     
     const result = spawnSync("git", args, {

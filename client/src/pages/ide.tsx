@@ -9,7 +9,7 @@ import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
 import { HeaderStatus, RunState } from "@/components/HeaderStatus";
-import { WorkspaceSelector } from "@/components/WorkspaceSelector";
+import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { HandoffsInbox } from "@/components/HandoffsInbox";
 import { useAIRunEvents } from "@/hooks/useAIRunEvents";
 import { FileTabsBar } from "@/components/FileTabsBar";
@@ -1092,11 +1092,11 @@ export default function IDEPage() {
           {/* Editor + Terminal Panel */}
           <ResizablePanel defaultSize={55}>
             <div className="h-full flex flex-col">
-              {/* Global Status Header */}
-              <div className="flex items-center justify-between h-6 bg-background border-b border-border px-1 shrink-0">
-                {/* Left: Workspace selector and handoffs */}
-                <div className="flex items-center gap-1">
-                  <WorkspaceSelector
+              {/* Global Status Header with Workspace Tabs */}
+              <div className="flex items-center justify-between h-8 bg-background border-b border-border shrink-0">
+                {/* Left: Workspace tabs */}
+                <div className="flex items-center h-full">
+                  <WorkspaceTabs
                     projectId={activeProjectId}
                     currentWorkspaceId={currentWorkspaceId}
                     onWorkspaceChange={handleWorkspaceChange}
@@ -1108,16 +1108,18 @@ export default function IDEPage() {
                   />
                 </div>
                 {/* Right: Status chips */}
-                <HeaderStatus 
-                  onNavigate={handleTabChange} 
-                  showMainHeader={showMainHeader}
-                  onToggleMainHeader={() => setShowMainHeader(!showMainHeader)}
-                  contextFilesCount={contextFiles.length}
-                  onOpenContextManager={() => setShowContextManager(true)}
-                  runState={runState}
-                  onOpenActivityTimeline={() => handleTabChange("runs")}
-                  isDirty={workspaceDirty}
-                />
+                <div className="px-1">
+                  <HeaderStatus 
+                    onNavigate={handleTabChange} 
+                    showMainHeader={showMainHeader}
+                    onToggleMainHeader={() => setShowMainHeader(!showMainHeader)}
+                    contextFilesCount={contextFiles.length}
+                    onOpenContextManager={() => setShowContextManager(true)}
+                    runState={runState}
+                    onOpenActivityTimeline={() => handleTabChange("runs")}
+                    isDirty={workspaceDirty}
+                  />
+                </div>
               </div>
               
               {/* Workspace Tabs */}
