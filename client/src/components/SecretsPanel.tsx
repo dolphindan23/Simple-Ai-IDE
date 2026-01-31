@@ -44,10 +44,11 @@ export function SecretsPanel() {
   const [newApiName, setNewApiName] = useState("");
   const [newApiSecretKey, setNewApiSecretKey] = useState("");
   const [newApiEndpoint, setNewApiEndpoint] = useState("");
+  const [newApiUsername, setNewApiUsername] = useState("");
   
   // Custom APIs stored in secrets with prefix CUSTOM_API_
   const customApis = secrets.filter(s => s.key.startsWith("CUSTOM_API_")).map(s => ({
-    name: s.key.replace("CUSTOM_API_", "").replace("_KEY", "").replace("_ENDPOINT", ""),
+    name: s.key.replace("CUSTOM_API_", "").replace("_KEY", "").replace("_ENDPOINT", "").replace("_USERNAME", ""),
     key: s.key,
     maskedValue: s.maskedValue
   }));
@@ -163,10 +164,17 @@ export function SecretsPanel() {
         await apiRequest("PUT", `/api/secrets/${encodeURIComponent(endpointName)}`, { value: newApiEndpoint });
       }
       
+      // Optionally store username if provided
+      if (newApiUsername.trim()) {
+        const usernameName = `CUSTOM_API_${newApiName.toUpperCase().replace(/\s+/g, "_")}_USERNAME`;
+        await apiRequest("PUT", `/api/secrets/${encodeURIComponent(usernameName)}`, { value: newApiUsername });
+      }
+      
       toast({ title: "API added", description: `Custom API '${newApiName}' has been saved.` });
       setNewApiName("");
       setNewApiSecretKey("");
       setNewApiEndpoint("");
+      setNewApiUsername("");
       await fetchSecrets();
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -671,6 +679,12 @@ export function SecretsPanel() {
                         onChange={(e) => setNewApiEndpoint(e.target.value)}
                         placeholder="API Endpoint (optional)"
                         data-testid="input-custom-api-endpoint"
+                      />
+                      <Input
+                        value={newApiUsername}
+                        onChange={(e) => setNewApiUsername(e.target.value)}
+                        placeholder="Username (optional)"
+                        data-testid="input-custom-api-username"
                       />
                     </div>
                     <Button size="sm" onClick={handleAddCustomApi} data-testid="button-add-custom-api">
