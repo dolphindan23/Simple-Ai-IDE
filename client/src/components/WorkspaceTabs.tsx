@@ -92,6 +92,8 @@ export function WorkspaceTabs({
   const [newKind, setNewKind] = useState<WorkspaceKind>("generic");
   const [newBaseBranch, setNewBaseBranch] = useState("main");
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "");
+  const [projectMode, setProjectMode] = useState<"existing" | "new">("existing");
+  const [newProjectName, setNewProjectName] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -101,10 +103,14 @@ export function WorkspaceTabs({
   });
   const projects = projectsData?.projects || [];
 
-  // Reset selected project when current project changes or dialog opens
+  // Reset form state when dialog opens
   useEffect(() => {
-    if (createDialogOpen && projectId) {
-      setSelectedProjectId(projectId);
+    if (createDialogOpen) {
+      setProjectMode("existing");
+      setNewProjectName("");
+      if (projectId) {
+        setSelectedProjectId(projectId);
+      }
     }
   }, [createDialogOpen, projectId]);
 
@@ -211,13 +217,45 @@ export function WorkspaceTabs({
     window.open(url.toString(), "_blank");
   };
 
-  const handleCreate = () => {
-    if (!newName.trim() || !selectedProjectId) return;
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    
+    let targetProjectId = selectedProjectId;
+    
+    // If creating a new project, create it first
+    if (projectMode === "new") {
+      if (!newProjectName.trim()) return;
+      
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newProjectName.trim() }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to create project");
+        }
+        const newProject = await res.json();
+        targetProjectId = newProject.id;
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      } catch (error) {
+        toast({
+          title: "Failed to create project",
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      if (!selectedProjectId) return;
+    }
+    
     createMutation.mutate({
       name: newName.trim(),
       kind: newKind,
       baseBranch: newBaseBranch,
-      targetProjectId: selectedProjectId,
+      targetProjectId,
     });
   };
 
@@ -326,26 +364,65 @@ export function WorkspaceTabs({
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="project">Project</Label>
-              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                <SelectTrigger id="project" data-testid="select-workspace-project">
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      <div className="flex items-center gap-2">
-                        <Folder className="h-3.5 w-3.5" />
-                        {project.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Select which project to create the workspace in.
-              </p>
+              <Label>Project</Label>
+              <div className="flex gap-1 p-1 bg-muted rounded-md">
+                <Button
+                  type="button"
+                  variant={projectMode === "existing" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setProjectMode("existing")}
+                  data-testid="button-project-mode-existing"
+                >
+                  Existing Project
+                </Button>
+                <Button
+                  type="button"
+                  variant={projectMode === "new" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setProjectMode("new")}
+                  data-testid="button-project-mode-new"
+                >
+                  New Project
+                </Button>
+              </div>
             </div>
+
+            {projectMode === "existing" ? (
+              <div className="space-y-2">
+                <Label htmlFor="project">Select Project</Label>
+                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                  <SelectTrigger id="project" data-testid="select-workspace-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        <div className="flex items-center gap-2">
+                          <Folder className="h-3.5 w-3.5" />
+                          {project.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="newProjectName">Project Name</Label>
+                <Input
+                  id="newProjectName"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="e.g., My New App"
+                  data-testid="input-new-project-name"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A new project will be created with this name.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="name">Workspace Name</Label>
@@ -401,7 +478,12 @@ export function WorkspaceTabs({
             </Button>
             <Button 
               onClick={handleCreate}
-              disabled={!newName.trim() || !selectedProjectId || createMutation.isPending}
+              disabled={
+                !newName.trim() || 
+                createMutation.isPending ||
+                (projectMode === "existing" && !selectedProjectId) ||
+                (projectMode === "new" && !newProjectName.trim())
+              }
               data-testid="button-create-workspace-confirm"
             >
               {createMutation.isPending ? "Creating..." : "Create Workspace"}
