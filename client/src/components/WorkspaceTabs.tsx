@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Plus, 
   ExternalLink, 
@@ -7,7 +7,8 @@ import {
   Smartphone,
   Server,
   Box,
-  X
+  X,
+  Folder
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +69,11 @@ const kindLabels: Record<WorkspaceKind, string> = {
   generic: "General",
 };
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 interface WorkspaceTabsProps {
   projectId: string | null;
   currentWorkspaceId: string;
@@ -85,8 +91,22 @@ export function WorkspaceTabs({
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<WorkspaceKind>("generic");
   const [newBaseBranch, setNewBaseBranch] = useState("main");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Fetch all projects for the project selector in the create dialog
+  const { data: projectsData } = useQuery<{ projects: Project[]; activeProjectId: string | null }>({
+    queryKey: ["/api/projects"],
+  });
+  const projects = projectsData?.projects || [];
+
+  // Reset selected project when current project changes or dialog opens
+  useEffect(() => {
+    if (createDialogOpen && projectId) {
+      setSelectedProjectId(projectId);
+    }
+  }, [createDialogOpen, projectId]);
 
   const { data: workspaces = [], isLoading } = useQuery<Workspace[]>({
     queryKey: ["/api/projects", projectId, "workspaces"],
@@ -100,11 +120,15 @@ export function WorkspaceTabs({
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; kind: WorkspaceKind; baseBranch: string }) => {
-      const res = await fetch(`/api/projects/${projectId}/workspaces`, {
+    mutationFn: async (data: { name: string; kind: WorkspaceKind; baseBranch: string; targetProjectId: string }) => {
+      const res = await fetch(`/api/projects/${data.targetProjectId}/workspaces`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          name: data.name,
+          kind: data.kind,
+          baseBranch: data.baseBranch,
+        }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -112,13 +136,16 @@ export function WorkspaceTabs({
       }
       return res.json() as Promise<Workspace>;
     },
-    onSuccess: (workspace) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "workspaces"] });
+    onSuccess: (workspace, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.targetProjectId, "workspaces"] });
       setCreateDialogOpen(false);
       setNewName("");
       setNewKind("generic");
       setNewBaseBranch("main");
-      onWorkspaceChange(workspace.id);
+      // Only switch to the new workspace if it was created in the current project
+      if (variables.targetProjectId === projectId) {
+        onWorkspaceChange(workspace.id);
+      }
       toast({
         title: "Workspace created",
         description: `"${workspace.name}" is now active.`,
@@ -185,11 +212,12 @@ export function WorkspaceTabs({
   };
 
   const handleCreate = () => {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !selectedProjectId) return;
     createMutation.mutate({
       name: newName.trim(),
       kind: newKind,
       baseBranch: newBaseBranch,
+      targetProjectId: selectedProjectId,
     });
   };
 
@@ -298,6 +326,28 @@ export function WorkspaceTabs({
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label htmlFor="project">Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger id="project" data-testid="select-workspace-project">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <div className="flex items-center gap-2">
+                        <Folder className="h-3.5 w-3.5" />
+                        {project.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select which project to create the workspace in.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="name">Workspace Name</Label>
               <Input
                 id="name"
@@ -351,7 +401,7 @@ export function WorkspaceTabs({
             </Button>
             <Button 
               onClick={handleCreate}
-              disabled={!newName.trim() || createMutation.isPending}
+              disabled={!newName.trim() || !selectedProjectId || createMutation.isPending}
               data-testid="button-create-workspace-confirm"
             >
               {createMutation.isPending ? "Creating..." : "Create Workspace"}

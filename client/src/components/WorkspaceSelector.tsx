@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   GitBranch, 
   Plus, 
@@ -9,7 +9,8 @@ import {
   Smartphone,
   Server,
   Box,
-  Check
+  Check,
+  Folder
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +79,11 @@ interface WorkspaceSelectorProps {
   onWorkspaceChange: (workspaceId: string) => void;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 export function WorkspaceSelector({ 
   projectId, 
   currentWorkspaceId, 
@@ -87,7 +93,21 @@ export function WorkspaceSelector({
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<WorkspaceKind>("generic");
   const [newBaseBranch, setNewBaseBranch] = useState("main");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "");
   const queryClient = useQueryClient();
+
+  // Fetch all projects for the project selector in the create dialog
+  const { data: projectsData } = useQuery<{ projects: Project[]; activeProjectId: string | null }>({
+    queryKey: ["/api/projects"],
+  });
+  const projects = projectsData?.projects || [];
+
+  // Reset selected project when current project changes or dialog opens
+  useEffect(() => {
+    if (createDialogOpen && projectId) {
+      setSelectedProjectId(projectId);
+    }
+  }, [createDialogOpen, projectId]);
 
   const { data: workspaces = [], isLoading } = useQuery<Workspace[]>({
     queryKey: ["/api/projects", projectId, "workspaces"],
@@ -101,15 +121,24 @@ export function WorkspaceSelector({
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; kind: WorkspaceKind; baseBranch: string }) => {
-      return apiRequest("POST", `/api/projects/${projectId}/workspaces`, data);
+    mutationFn: async (data: { name: string; kind: WorkspaceKind; baseBranch: string; targetProjectId: string }): Promise<Workspace> => {
+      const res = await apiRequest("POST", `/api/projects/${data.targetProjectId}/workspaces`, {
+        name: data.name,
+        kind: data.kind,
+        baseBranch: data.baseBranch,
+      });
+      return res.json();
     },
-    onSuccess: (workspace: Workspace) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "workspaces"] });
+    onSuccess: (workspace: Workspace, variables) => {
+      // Invalidate workspaces for the target project
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.targetProjectId, "workspaces"] });
       setCreateDialogOpen(false);
       setNewName("");
       setNewKind("generic");
-      onWorkspaceChange(workspace.id);
+      // Only switch to the new workspace if it was created in the current project
+      if (variables.targetProjectId === projectId) {
+        onWorkspaceChange(workspace.id);
+      }
     },
   });
 
@@ -123,11 +152,12 @@ export function WorkspaceSelector({
   };
 
   const handleCreate = () => {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !selectedProjectId) return;
     createMutation.mutate({
       name: newName.trim(),
       kind: newKind,
       baseBranch: newBaseBranch,
+      targetProjectId: selectedProjectId,
     });
   };
 
@@ -223,6 +253,28 @@ export function WorkspaceSelector({
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label htmlFor="project">Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger id="project" data-testid="select-workspace-project">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <div className="flex items-center gap-2">
+                        <Folder className="h-3.5 w-3.5" />
+                        {project.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select which project to create the workspace in.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="name">Workspace Name</Label>
               <Input
                 id="name"
@@ -276,7 +328,7 @@ export function WorkspaceSelector({
             </Button>
             <Button 
               onClick={handleCreate}
-              disabled={!newName.trim() || createMutation.isPending}
+              disabled={!newName.trim() || !selectedProjectId || createMutation.isPending}
               data-testid="button-create-workspace-confirm"
             >
               {createMutation.isPending ? "Creating..." : "Create Workspace"}
