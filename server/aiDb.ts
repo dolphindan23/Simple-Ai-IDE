@@ -47,6 +47,7 @@ function initSchema(database: Database.Database) {
     CREATE TABLE IF NOT EXISTS ai_runs (
       id TEXT PRIMARY KEY,
       run_key TEXT UNIQUE,
+      workspace_id TEXT,
       mode TEXT NOT NULL CHECK (mode IN ('plan', 'implement', 'test', 'review', 'verify', 'autonomous')),
       status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'needs_approval', 'completed', 'failed', 'cancelled')),
       goal TEXT,
@@ -56,6 +57,8 @@ function initSchema(database: Database.Database) {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+    
+    CREATE INDEX IF NOT EXISTS idx_runs_workspace ON ai_runs(workspace_id);
     
     CREATE TABLE IF NOT EXISTS ai_run_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +76,15 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_runs_status ON ai_runs(status);
     CREATE INDEX IF NOT EXISTS idx_runs_created ON ai_runs(created_at DESC);
   `);
+  
+  // Migration: add workspace_id to ai_runs if it doesn't exist
+  const aiRunsInfo = database.prepare("PRAGMA table_info(ai_runs)").all() as { name: string }[];
+  const aiRunsColumns = new Set(aiRunsInfo.map(c => c.name));
+  
+  if (!aiRunsColumns.has("workspace_id")) {
+    database.exec("ALTER TABLE ai_runs ADD COLUMN workspace_id TEXT");
+    database.exec("CREATE INDEX IF NOT EXISTS idx_runs_workspace ON ai_runs(workspace_id)");
+  }
   
   seedAgentProfiles(database);
 }
@@ -192,6 +204,7 @@ export interface AgentProfile {
 export interface AiRun {
   id: string;
   run_key: string | null;
+  workspace_id: string | null;
   mode: "plan" | "implement" | "test" | "review" | "verify" | "autonomous";
   status: "queued" | "running" | "needs_approval" | "completed" | "failed" | "cancelled";
   goal: string | null;
@@ -295,11 +308,12 @@ export function createRun(run: Omit<AiRun, "created_at" | "updated_at">): AiRun 
   const database = getDb();
   
   database.prepare(`
-    INSERT INTO ai_runs (id, run_key, mode, status, goal, agents, fast_mode, created_by_user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ai_runs (id, run_key, workspace_id, mode, status, goal, agents, fast_mode, created_by_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     run.id,
     run.run_key,
+    run.workspace_id,
     run.mode,
     run.status,
     run.goal,
@@ -342,9 +356,21 @@ export function updateRunStatus(id: string, status: AiRun["status"]): void {
   database.prepare("UPDATE ai_runs SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
 }
 
-export function getRecentRuns(limit: number = 20): AiRun[] {
+export function getRecentRuns(limit: number = 20, workspaceId?: string | null): AiRun[] {
   const database = getDb();
-  const rows = database.prepare("SELECT * FROM ai_runs ORDER BY created_at DESC LIMIT ?").all(limit) as any[];
+  
+  let query = "SELECT * FROM ai_runs";
+  const params: (string | number)[] = [];
+  
+  if (workspaceId !== undefined && workspaceId !== null && workspaceId !== "all") {
+    query += " WHERE workspace_id = ?";
+    params.push(workspaceId);
+  }
+  
+  query += " ORDER BY created_at DESC LIMIT ?";
+  params.push(limit);
+  
+  const rows = database.prepare(query).all(...params) as any[];
   
   return rows.map(row => ({
     ...row,

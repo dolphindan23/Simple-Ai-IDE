@@ -2820,15 +2820,19 @@ export async function registerRoutes(
   });
 
   // Main SSE stream for all AI events (used by frontend)
+  // Accepts ?workspaceId=<id> to filter by workspace, or omit/set to "all" for all workspaces
   app.get("/api/ai/stream", (req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
     
-    // Send initial state
+    const workspaceId = req.query.workspaceId as string | undefined;
+    const filterWorkspace = workspaceId && workspaceId !== "all" ? workspaceId : null;
+    
+    // Send initial state - filter runs by workspace if specified
     const agents = aiDb.getAgentProfiles();
-    const runs = aiDb.getRecentRuns(20);
+    const runs = aiDb.getRecentRuns(20, filterWorkspace);
     const events = runs.length > 0 
       ? runs.flatMap(r => aiDb.getRunEvents(r.id, 50))
       : [];
@@ -2836,13 +2840,27 @@ export async function registerRoutes(
     const initData = {
       agents,
       runs,
-      events: events.slice(-100)
+      events: events.slice(-100),
+      workspaceId: filterWorkspace || "all"
     };
     res.write(`event: init\ndata: ${JSON.stringify(initData)}\n\n`);
     
-    // Subscribe to all events
+    // Subscribe to all events, but filter by workspace on the fly
     const unsubscribe = subscribeToAllRuns((event) => {
-      res.write(`event: run_event\ndata: ${JSON.stringify(event)}\n\n`);
+      // If filtering by workspace, check if the run belongs to that workspace
+      if (filterWorkspace) {
+        const run = aiDb.getRun(event.run_id);
+        if (run && run.workspace_id !== filterWorkspace) {
+          return; // Skip events from other workspaces
+        }
+      }
+      // Include workspace_id in event payload for frontend display
+      const run = aiDb.getRun(event.run_id);
+      const eventWithWorkspace = {
+        ...event,
+        workspace_id: run?.workspace_id || null
+      };
+      res.write(`event: run_event\ndata: ${JSON.stringify(eventWithWorkspace)}\n\n`);
     });
     
     // Heartbeat every 30s
