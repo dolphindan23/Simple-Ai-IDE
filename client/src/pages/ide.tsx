@@ -1089,6 +1089,9 @@ export default function IDEPage() {
                         setContextFiles([...contextFiles, { path, pinned: false }]);
                       }
                     }}
+                    onRemoveFromContext={(path) => {
+                      setContextFiles(contextFiles.filter(f => f.path !== path));
+                    }}
                   />
                 </div>
               )}

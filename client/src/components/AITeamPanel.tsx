@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, ChevronUp, Zap, Target, Clock, Eye, Users, Activity, Minus, Package } from "lucide-react";
+import { Bot, Play, FileCode, TestTube, MessageSquare, Check, X, Loader2, ChevronDown, ChevronRight, ChevronUp, Zap, Target, Clock, Eye, Users, Activity, Minus, Package, File, FolderOpen, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,7 @@ interface AITeamPanelProps {
   workspaceId?: string | null;
   workspaceName?: string;
   onAddToContext?: (path: string) => void;
+  onRemoveFromContext?: (path: string) => void;
   contextFiles?: Array<{ path: string; pinned: boolean }>;
 }
 
@@ -225,6 +226,7 @@ export function AITeamPanel({
   workspaceId,
   workspaceName = "Current",
   onAddToContext,
+  onRemoveFromContext,
   contextFiles = [],
 }: AITeamPanelProps) {
   const [accurateMode, setAccurateMode] = useState(false);
@@ -353,20 +355,77 @@ export function AITeamPanel({
 
       {/* Input Controls - fixed at bottom */}
       <div className="border-t border-sidebar-border p-4 space-y-3 shrink-0">
-        {/* Context Files Preview */}
-        {contextFiles.length > 0 && (
-          <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-muted-foreground">
-            <span className="font-medium">Context:</span>
-            {contextFiles.slice(0, 3).map(f => (
-              <Badge key={f.path} variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal">
-                {f.path.split('/').pop()}
-              </Badge>
-            ))}
-            {contextFiles.length > 3 && (
-              <span className="text-muted-foreground/70">+{contextFiles.length - 3} more</span>
+        {/* Context Files Section */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">
+                Context Files {contextFiles.length > 0 && `(${contextFiles.length})`}
+              </span>
+            </div>
+            {contextFiles.length > 0 && onRemoveFromContext && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
+                onClick={() => contextFiles.forEach(f => onRemoveFromContext(f.path))}
+                data-testid="button-clear-all-context"
+              >
+                Clear all
+              </Button>
             )}
           </div>
-        )}
+          
+          {contextFiles.length === 0 ? (
+            <div className="flex items-center justify-center py-3 px-2 border border-dashed border-muted-foreground/30 rounded-md bg-muted/20">
+              <p className="text-[10px] text-muted-foreground/70 text-center">
+                Drag files here or right-click → "Add to AI Context"
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {contextFiles.map(f => {
+                const fileName = f.path.split('/').pop() || f.path;
+                const fileExt = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
+                
+                return (
+                  <Tooltip key={f.path}>
+                    <TooltipTrigger asChild>
+                      <Badge 
+                        variant="secondary" 
+                        className="group flex items-center gap-1 px-2 py-0.5 h-6 text-xs font-normal cursor-default"
+                        data-testid={`badge-context-file-${fileName}`}
+                      >
+                        <File className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="truncate max-w-[100px]">{fileName}</span>
+                        {f.pinned && (
+                          <Pin className="h-2.5 w-2.5 text-primary shrink-0" />
+                        )}
+                        {onRemoveFromContext && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveFromContext(f.path);
+                            }}
+                            className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded-sm hover:bg-destructive/20"
+                            data-testid={`button-remove-context-${fileName}`}
+                          >
+                            <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        )}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px]">
+                      <p className="text-xs font-mono">{f.path}</p>
+                      {fileExt && <p className="text-[10px] text-muted-foreground mt-0.5">{fileExt.toUpperCase()} file</p>}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          )}
+        </div>
         
         {/* Goal Input with drag-drop zone */}
         <div
