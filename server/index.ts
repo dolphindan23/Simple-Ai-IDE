@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { DATA_DIR, PROJECTS_DIR, ensureDataDirs } from "./config/paths";
+import { initializeSessionSecret } from "./config/sessionSecret";
 
 const app = express();
 const httpServer = createServer(app);
@@ -61,6 +62,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize session secret early (auto-generates if not set)
+  initializeSessionSecret();
+
   // Ensure data directories exist and log resolved paths
   ensureDataDirs();
   log(`DATA_DIR: ${DATA_DIR}`, "config");
