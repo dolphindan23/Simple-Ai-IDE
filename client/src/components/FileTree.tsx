@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Pencil, Trash2, Copy, FilePlus, FolderPlus, Search, X } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Pencil, Trash2, Copy, FilePlus, FolderPlus, Search, X, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ interface FileTreeProps {
   onCopyPath?: (path: string) => void;
   onNewFile?: (folderPath: string) => void;
   onNewFolder?: (folderPath: string) => void;
+  onAddToContext?: (path: string) => void;
 }
 
 interface FileTreeNodeProps {
@@ -28,9 +29,10 @@ interface FileTreeNodeProps {
   onCopyPath?: (path: string) => void;
   onNewFile?: (folderPath: string) => void;
   onNewFolder?: (folderPath: string) => void;
+  onAddToContext?: (path: string) => void;
 }
 
-function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder, onAddToContext }: FileTreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(depth < 2);
   const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedPath === node.path;
@@ -84,6 +86,13 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
             onClick={handleClick}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            draggable={!isDirectory}
+            onDragStart={(e) => {
+              if (!isDirectory) {
+                e.dataTransfer.setData("text/plain", node.path);
+                e.dataTransfer.effectAllowed = "copy";
+              }
+            }}
             className={cn(
               "group flex items-center gap-1 w-full px-2 py-1 text-sm text-left hover-elevate rounded-sm transition-colors cursor-pointer",
               isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -235,6 +244,12 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
               Copy Path
             </ContextMenuItem>
           )}
+          {onAddToContext && !isDirectory && (
+            <ContextMenuItem onClick={() => onAddToContext(node.path)} data-testid={`ctx-add-context-${node.path}`}>
+              <BrainCircuit className="h-4 w-4 mr-2" />
+              Add to AI Context
+            </ContextMenuItem>
+          )}
           {onDelete && (
             <>
               <ContextMenuSeparator />
@@ -261,6 +276,7 @@ function FileTreeNode({ node, depth, selectedPath, onSelectFile, onRename, onDel
               onCopyPath={onCopyPath}
               onNewFile={onNewFile}
               onNewFolder={onNewFolder}
+              onAddToContext={onAddToContext}
             />
           ))}
         </div>
@@ -308,7 +324,7 @@ function filterFileTree(nodes: FileNode[], searchTerm: string): FileNode[] {
     .filter((node): node is FileNode => node !== null);
 }
 
-export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder }: FileTreeProps) {
+export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete, onCopyPath, onNewFile, onNewFolder, onAddToContext }: FileTreeProps) {
   const [searchTerm, setSearchTerm] = useState("");
   
   const filteredFiles = useMemo(() => {
@@ -368,6 +384,7 @@ export function FileTree({ files, selectedPath, onSelectFile, onRename, onDelete
               onCopyPath={onCopyPath}
               onNewFile={onNewFile}
               onNewFolder={onNewFolder}
+              onAddToContext={onAddToContext}
             />
           ))
         )}

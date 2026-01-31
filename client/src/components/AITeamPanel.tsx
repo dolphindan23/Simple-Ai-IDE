@@ -30,6 +30,8 @@ interface AITeamPanelProps {
   projectId?: string | null;
   workspaceId?: string | null;
   workspaceName?: string;
+  onAddToContext?: (path: string) => void;
+  contextFiles?: Array<{ path: string; pinned: boolean }>;
 }
 
 function formatLatency(ms?: number): string {
@@ -222,9 +224,35 @@ export function AITeamPanel({
   projectId,
   workspaceId,
   workspaceName = "Current",
+  onAddToContext,
+  contextFiles = [],
 }: AITeamPanelProps) {
   const [accurateMode, setAccurateMode] = useState(false);
   const [agentActivityMinimized, setAgentActivityMinimized] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    
+    const filePath = e.dataTransfer.getData("text/plain");
+    if (filePath && onAddToContext) {
+      onAddToContext(filePath);
+    }
+  };
   
   const getStatusBadge = () => {
     if (!currentTask) return null;
@@ -325,14 +353,44 @@ export function AITeamPanel({
 
       {/* Input Controls - fixed at bottom */}
       <div className="border-t border-sidebar-border p-4 space-y-3 shrink-0">
-        {/* Goal Input */}
-        <Textarea
-          value={goal}
-          onChange={(e) => onGoalChange(e.target.value)}
-          placeholder="Describe what you want the AI to do..."
-          className="min-h-[60px] text-sm resize-none"
-          data-testid="textarea-goal"
-        />
+        {/* Context Files Preview */}
+        {contextFiles.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-muted-foreground">
+            <span className="font-medium">Context:</span>
+            {contextFiles.slice(0, 3).map(f => (
+              <Badge key={f.path} variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal">
+                {f.path.split('/').pop()}
+              </Badge>
+            ))}
+            {contextFiles.length > 3 && (
+              <span className="text-muted-foreground/70">+{contextFiles.length - 3} more</span>
+            )}
+          </div>
+        )}
+        
+        {/* Goal Input with drag-drop zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={cn(
+            "relative rounded-md transition-all",
+            isDragOver && "ring-2 ring-primary ring-offset-2 ring-offset-sidebar"
+          )}
+        >
+          <Textarea
+            value={goal}
+            onChange={(e) => onGoalChange(e.target.value)}
+            placeholder="Describe what you want the AI to do... (drag files here to add context)"
+            className="min-h-[60px] text-sm resize-none"
+            data-testid="textarea-goal"
+          />
+          {isDragOver && (
+            <div className="absolute inset-0 bg-primary/10 rounded-md flex items-center justify-center pointer-events-none">
+              <span className="text-xs font-medium text-primary">Drop to add file to context</span>
+            </div>
+          )}
+        </div>
 
         {/* Mode Toggle with tooltip */}
         <Tooltip>

@@ -1083,6 +1083,12 @@ export default function IDEPage() {
                     projectId={activeProjectId}
                     workspaceId={currentWorkspaceId}
                     workspaceName={currentWorkspaceId || "main"}
+                    contextFiles={contextFiles}
+                    onAddToContext={(path) => {
+                      if (!contextFiles.some(f => f.path === path)) {
+                        setContextFiles([...contextFiles, { path, pinned: false }]);
+                      }
+                    }}
                   />
                 </div>
               )}
@@ -1272,6 +1278,11 @@ export default function IDEPage() {
                       onCopyPath={handleCopyPath}
                       onNewFile={handleNewFileInFolder}
                       onNewFolder={handleNewFolderInFolder}
+                      onAddToContext={(path) => {
+                        if (!contextFiles.some(f => f.path === path)) {
+                          setContextFiles([...contextFiles, { path, pinned: false }]);
+                        }
+                      }}
                     />
                   </div>
                 </>
