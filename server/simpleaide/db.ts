@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
 import * as path from "path";
+import { getCapsulesDbPath } from "../config/paths";
 
-const DB_PATH = path.join(process.cwd(), "capsules.db");
+const DB_PATH = getCapsulesDbPath();
 let db: Database.Database | null = null;
 
 export function getCapsulesDb(): Database.Database {

@@ -1,9 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
+import { DATA_DIR, PROJECT_ROOT } from "./config/paths";
 
-const PROJECT_ROOT = path.resolve(process.cwd());
-const DB_DIR = path.join(PROJECT_ROOT, ".simpleaide", "databases");
+const DB_DIR = path.join(DATA_DIR, "databases");
 
 const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 

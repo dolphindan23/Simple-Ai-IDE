@@ -1,0 +1,33 @@
+# git / metadata
+.git
+.gitignore
+
+# dependencies / build outputs
+node_modules
+dist
+
+# runtime state & secrets
+.simpleaide
+.simpleide
+projects
+runs
+git-logs
+*.log
+
+# sqlite artifacts
+*.db
+*.db-wal
+*.db-shm
+
+# editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# large local assets not needed in image
+attached_assets
+
+# documentation (optional, reduce image size)
+*.md
+LOCAL_INSTALL.md

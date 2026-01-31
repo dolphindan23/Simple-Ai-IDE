@@ -12,8 +12,9 @@ import {
   ProjectGitOp,
   GitOpType,
 } from "../db";
+import { PROJECTS_DIR, DATA_DIR } from "../../config/paths";
 
-const PROJECTS_ROOT = path.join(process.cwd(), "projects");
+const PROJECTS_ROOT = PROJECTS_DIR;
 const STAGING_ROOT = path.join(PROJECTS_ROOT, ".staging");
 
 export interface CloneOptions {
@@ -66,7 +67,7 @@ function getLogPath(projectId: string, opId: string): string {
 }
 
 function getLegacyLogPath(opId: string): string {
-  const legacyDir = path.join(process.cwd(), ".simpleaide", "git-logs");
+  const legacyDir = path.join(DATA_DIR, "git-logs");
   ensureDir(legacyDir);
   return path.join(legacyDir, `${opId}.log`);
 }

@@ -76,11 +76,18 @@ import {
   type HandoffStatus
 } from "./simpleaide/handoffs";
 
-const PROJECT_ROOT = path.resolve(process.cwd());
-const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
-const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
-const PROJECTS_DIR = path.join(PROJECT_ROOT, "projects");
-const ACTIVE_PROJECT_FILE = path.join(SETTINGS_DIR, "active-project.json");
+import { 
+  PROJECT_ROOT, 
+  DATA_DIR, 
+  PROJECTS_DIR, 
+  ensureDataDirs,
+  getSettingsFile,
+  getActiveProjectFile
+} from "./config/paths";
+
+const SETTINGS_DIR = DATA_DIR;
+const SETTINGS_FILE = getSettingsFile();
+const ACTIVE_PROJECT_FILE = getActiveProjectFile();
 
 const backendHealthCache = new Map<string, { online: boolean; lastChecked: number; error?: string }>();
 const HEALTH_CACHE_TTL_MS = 60 * 1000;

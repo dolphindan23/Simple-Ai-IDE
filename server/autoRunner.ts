@@ -7,10 +7,10 @@ import { validatePatch, formatValidationErrors, type TrustLimits } from "./patch
 import type { StepType, StepInput, TaskRun } from "@shared/schema";
 import { createRun, getRun, getRunByKey } from "./aiDb";
 import { emitRunStatus, emitAgentStatus, emitStep, emitWriteFile, emitError, emitProposeChangeset } from "./aiEvents";
+import { PROJECT_ROOT, DATA_DIR } from "./config/paths";
 
 const MAX_FIX_ATTEMPTS = 3;
-const PROJECT_ROOT = path.resolve(process.cwd());
-const BACKUP_DIR = path.join(PROJECT_ROOT, ".simpleaide", "backups");
+const BACKUP_DIR = path.join(DATA_DIR, "backups");
 
 const runningWorkflows = new Set<string>();
 

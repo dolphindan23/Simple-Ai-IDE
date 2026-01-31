@@ -13,8 +13,17 @@ vite.config.ts.*
 *.tar.gz
 *.zip
 
-# Runtime data (contains secrets, databases, and user preferences)
+# --- SimpleAIDE runtime state (NEVER COMMIT) ---
 .simpleaide/
+.simpleide/
+projects/
+git-logs/
+runs/
+
+# SQLite/runtime artifacts
+*.db
+*.db-wal
+*.db-shm
 
 # Attached assets (conversation reference files - not needed for distribution)
 attached_assets/
@@ -63,7 +72,6 @@ temp/
 # SQLite database files (if any outside .simpleaide)
 *.sqlite
 *.sqlite3
-*.db
 
 # Python (if used for scripts)
 __pycache__/

@@ -7,9 +7,12 @@ services:
     env_file:
       - .env.docker
     environment:
+      - NODE_ENV=production
       - HOST=0.0.0.0
       - PORT=8521
       - OLLAMA_BASE_URL=http://ollama:11434
+      - SIMPLEAIDE_DATA_DIR=/app/.simpleaide
+      - SIMPLEAIDE_PROJECTS_DIR=/app/projects
     ports:
       - "8521:8521"
     depends_on:
@@ -17,7 +20,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - simpleaide_config:/app/.simpleaide
+      - simpleaide_data:/app/.simpleaide
       - simpleaide_projects:/app/projects
 
   ollama:
@@ -65,5 +68,5 @@ services:
 
 volumes:
   ollama_data:
-  simpleaide_config:
+  simpleaide_data:
   simpleaide_projects:

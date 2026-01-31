@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import { DATA_DIR, getSecretsFile } from "./config/paths";
 
 const ALGORITHM = "aes-256-gcm";
 const KEY_LENGTH = 32;
@@ -9,9 +10,8 @@ const AUTH_TAG_LENGTH = 16;
 const SALT_LENGTH = 32;
 const PBKDF2_ITERATIONS = 100000;
 
-const PROJECT_ROOT = path.resolve(process.cwd());
-const SECRETS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
-const SECRETS_FILE = path.join(SECRETS_DIR, "secrets.enc");
+const SECRETS_DIR = DATA_DIR;
+const SECRETS_FILE = getSecretsFile();
 
 interface SecretsVault {
   secrets: Record<string, string>;
