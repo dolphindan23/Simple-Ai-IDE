@@ -2901,6 +2901,7 @@ export async function registerRoutes(
       const run = aiDb.createRun({
         id,
         run_key: run_key || null,
+        workspace_id: null,
         mode,
         status: "queued",
         goal: goal || null,
@@ -3486,6 +3487,92 @@ export async function registerRoutes(
       
       const validation = validateTemplate(template);
       res.json({ template, validation });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/v1/projects/:projectId/templates", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const { name, description, tags = [], variables = {}, files = [], requiresSecrets = [] } = req.body;
+      
+      if (!name || !description) {
+        return res.status(400).json({ error: "name and description are required" });
+      }
+      
+      const projectPath = getProjectPath(projectId);
+      if (!fs.existsSync(projectPath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const templateId = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+      if (!templateId || templateId.length < 2 || templateId.length > 64) {
+        return res.status(400).json({ error: "Template name must be 2-64 characters" });
+      }
+      
+      const templateDir = path.join(projectPath, ".simpleaide", "templates", templateId);
+      
+      if (!templateDir.startsWith(path.join(projectPath, ".simpleaide", "templates"))) {
+        return res.status(400).json({ error: "Invalid template name" });
+      }
+      
+      if (fs.existsSync(templateDir)) {
+        return res.status(409).json({ error: "Template with this name already exists" });
+      }
+      
+      const safeFiles: string[] = [];
+      for (const filePath of files) {
+        if (typeof filePath !== "string") continue;
+        const normalized = path.normalize(filePath).replace(/^[/\\]+/, "");
+        if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
+          continue;
+        }
+        const fullPath = path.resolve(projectPath, normalized);
+        if (!fullPath.startsWith(projectPath)) {
+          continue;
+        }
+        if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+          safeFiles.push(normalized);
+        }
+      }
+      
+      fs.mkdirSync(templateDir, { recursive: true });
+      
+      const templateManifest = {
+        id: templateId,
+        name,
+        version: "1.0.0",
+        description,
+        tags: Array.isArray(tags) ? tags.filter(t => typeof t === "string") : [],
+        variables: typeof variables === "object" ? variables : {},
+        requiresSecrets: Array.isArray(requiresSecrets) ? requiresSecrets.filter(s => typeof s === "string") : [],
+        creates: {
+          files: safeFiles
+        },
+        extends: []
+      };
+      
+      fs.writeFileSync(
+        path.join(templateDir, "manifest.json"),
+        JSON.stringify(templateManifest, null, 2)
+      );
+      
+      const filesDir = path.join(templateDir, "files");
+      fs.mkdirSync(filesDir, { recursive: true });
+      
+      for (const filePath of safeFiles) {
+        const sourcePath = path.join(projectPath, filePath);
+        const destPath = path.join(filesDir, filePath);
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.copyFileSync(sourcePath, destPath);
+      }
+      
+      res.status(201).json({
+        templateId,
+        path: templateDir,
+        manifest: templateManifest
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
