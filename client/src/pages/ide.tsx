@@ -225,9 +225,9 @@ export default function IDEPage() {
     enabled: !!activeProjectId,
   });
 
-  // Fetch file tree - workspace-scoped when not main
+  // Fetch file tree - workspace-scoped when not main, project-scoped always
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
-    queryKey: ["/api/ws", currentWorkspaceId, "files"],
+    queryKey: ["/api/ws", activeProjectId, currentWorkspaceId, "files"],
     queryFn: async () => {
       // Use workspace-scoped endpoint for non-main workspaces
       if (currentWorkspaceId && currentWorkspaceId !== "main") {
@@ -1265,9 +1265,17 @@ export default function IDEPage() {
                   <div className="px-2 py-1.5 border-b border-sidebar-border">
                     <ProjectSelector 
                       onProjectChange={() => {
+                        // Reset to main workspace since workspaces are project-specific
+                        setCurrentWorkspaceId("main");
+                        const url = new URL(window.location.href);
+                        url.searchParams.set("ws", "main");
+                        window.history.replaceState({}, "", url.toString());
+                        // Clear file state
                         setSelectedFile(null);
                         setOpenFiles([]);
                         setFileContent("");
+                        setOriginalContent("");
+                        setIsDirty(false);
                       }}
                     />
                   </div>
