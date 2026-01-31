@@ -43,6 +43,38 @@ import { bootstrapProject } from "./simpleaide/git/bootstrap";
 import { validateRemoteUrl } from "./simpleaide/git/gitUrl";
 import { listGitOps, getProjectRemote, getGitOp, createGitOp, updateGitOp } from "./simpleaide/db";
 import { generateOpId } from "./simpleaide/git/gitWorker";
+import { 
+  listWorkspaces as listProjectWorkspaces, 
+  getWorkspace, 
+  createWorkspace, 
+  updateWorkspace, 
+  deleteWorkspace as deleteWorkspaceFromRegistry,
+  archiveWorkspace,
+  getWorkspaceRoot,
+  createMainWorkspace,
+  type Workspace,
+  type CreateWorkspaceOptions
+} from "./simpleaide/workspaces";
+import { 
+  createWorktree, 
+  removeWorktree, 
+  listGitWorktrees, 
+  getWorktreeStatus,
+  pruneWorktrees
+} from "./simpleaide/git/worktrees";
+import {
+  createHandoff,
+  getHandoff,
+  listHandoffs,
+  getInboxHandoffs,
+  getUnreadCount,
+  acknowledgeHandoff,
+  markHandoffDone,
+  deleteHandoff,
+  type CreateHandoffOptions,
+  type HandoffType,
+  type HandoffStatus
+} from "./simpleaide/handoffs";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const SETTINGS_DIR = path.join(PROJECT_ROOT, ".simpleaide");
@@ -442,6 +474,410 @@ export async function registerRoutes(
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ============ WORKSPACE ROUTES ============
+
+  // List workspaces for a project
+  app.get("/api/projects/:projectId/workspaces", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      
+      if (!projectId || projectId.includes("..") || projectId.includes("/")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const workspaces = listProjectWorkspaces(projectId);
+      
+      // Include worktree status for each workspace
+      const workspacesWithStatus = workspaces.map(ws => ({
+        ...ws,
+        worktreeStatus: ws.id !== "main" ? getWorktreeStatus(projectId, ws.id) : null,
+      }));
+      
+      res.json(workspacesWithStatus);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get a specific workspace
+  app.get("/api/projects/:projectId/workspaces/:workspaceId", (req: Request, res: Response) => {
+    try {
+      const { projectId, workspaceId } = req.params;
+      
+      if (!projectId || projectId.includes("..")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const workspace = getWorkspace(projectId, workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      const worktreeStatus = workspace.id !== "main" ? getWorktreeStatus(projectId, workspace.id) : null;
+      
+      res.json({ ...workspace, worktreeStatus });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new workspace (with optional git worktree)
+  app.post("/api/projects/:projectId/workspaces", (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const { name, kind = "generic", baseBranch = "main", branch, useWorktree = true } = req.body;
+      
+      if (!projectId || projectId.includes("..")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      if (!name || typeof name !== "string") {
+        return res.status(400).json({ error: "Name is required" });
+      }
+      
+      // Create workspace in registry first
+      const workspace = createWorkspace({
+        name,
+        projectId,
+        kind,
+        baseBranch,
+        branch,
+      });
+      
+      // Create git worktree if requested
+      if (useWorktree) {
+        const worktreeResult = createWorktree(projectId, workspace.id, workspace.branch, baseBranch);
+        
+        if (!worktreeResult.success) {
+          // Rollback workspace creation
+          deleteWorkspaceFromRegistry(projectId, workspace.id);
+          return res.status(500).json({ error: worktreeResult.error || "Failed to create worktree" });
+        }
+        
+        // Update workspace with actual worktree path
+        updateWorkspace(projectId, workspace.id, { rootPath: worktreeResult.worktreePath });
+      }
+      
+      res.json(workspace);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update a workspace
+  app.patch("/api/projects/:projectId/workspaces/:workspaceId", (req: Request, res: Response) => {
+    try {
+      const { projectId, workspaceId } = req.params;
+      const updates = req.body;
+      
+      if (!projectId || projectId.includes("..")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      // Don't allow updating id, projectId, or rootPath directly
+      const { id, projectId: pid, rootPath, ...allowedUpdates } = updates;
+      
+      const workspace = updateWorkspace(projectId, workspaceId, allowedUpdates);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      res.json(workspace);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete a workspace (and optionally its worktree)
+  app.delete("/api/projects/:projectId/workspaces/:workspaceId", (req: Request, res: Response) => {
+    try {
+      const { projectId, workspaceId } = req.params;
+      const force = req.query.force === "true";
+      
+      if (!projectId || projectId.includes("..")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      if (workspaceId === "main") {
+        return res.status(400).json({ error: "Cannot delete main workspace" });
+      }
+      
+      const workspace = getWorkspace(projectId, workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      // Remove worktree first
+      const worktreeResult = removeWorktree(projectId, workspaceId, force);
+      if (!worktreeResult.success) {
+        return res.status(500).json({ error: worktreeResult.error || "Failed to remove worktree" });
+      }
+      
+      // Remove from registry
+      deleteWorkspaceFromRegistry(projectId, workspaceId);
+      
+      // Prune any stale worktrees
+      pruneWorktrees(projectId);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Archive a workspace (soft delete)
+  app.post("/api/projects/:projectId/workspaces/:workspaceId/archive", (req: Request, res: Response) => {
+    try {
+      const { projectId, workspaceId } = req.params;
+      
+      if (!projectId || projectId.includes("..")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const success = archiveWorkspace(projectId, workspaceId);
+      if (!success) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============ WORKSPACE-SCOPED FILE ROUTES ============
+
+  // Get files for a specific workspace
+  app.get("/api/ws/:workspaceId/files", (req: Request, res: Response) => {
+    try {
+      const { workspaceId } = req.params;
+      const projectId = req.query.projectId as string || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const workspace = getWorkspace(projectId, workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      const tree = getFileTree(workspace.rootPath);
+      res.json(tree);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get file content for a specific workspace
+  app.get("/api/ws/:workspaceId/files/content", (req: Request, res: Response) => {
+    try {
+      const { workspaceId } = req.params;
+      const filePath = req.query.path as string;
+      const projectId = req.query.projectId as string || getActiveProjectId();
+      
+      if (!filePath) {
+        return res.status(400).json({ error: "Path is required" });
+      }
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const workspace = getWorkspace(projectId, workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      const rootDir = path.resolve(workspace.rootPath);
+      const fullPath = path.resolve(rootDir, filePath);
+      
+      // Security check
+      const relativePath = path.relative(rootDir, fullPath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const content = fs.readFileSync(fullPath, "utf-8");
+      res.json({ content, path: filePath });
+    } catch (error: any) {
+      res.status(404).json({ error: error.message });
+    }
+  });
+
+  // Save file content for a specific workspace
+  app.post("/api/ws/:workspaceId/files/content", (req: Request, res: Response) => {
+    try {
+      const { workspaceId } = req.params;
+      const { path: filePath, content } = req.body;
+      const projectId = req.body.projectId || getActiveProjectId();
+      
+      if (!filePath || content === undefined) {
+        return res.status(400).json({ error: "Path and content are required" });
+      }
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const workspace = getWorkspace(projectId, workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      const rootDir = path.resolve(workspace.rootPath);
+      const fullPath = path.resolve(rootDir, filePath);
+      
+      // Security check
+      const relativePath = path.relative(rootDir, fullPath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Ensure parent directory exists
+      const parentDir = path.dirname(fullPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(fullPath, content);
+      res.json({ success: true, path: filePath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Helper to get active project ID
+  function getActiveProjectId(): string | null {
+    try {
+      if (fs.existsSync(ACTIVE_PROJECT_FILE)) {
+        const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_FILE, "utf-8"));
+        return data.projectId || null;
+      }
+    } catch {}
+    return null;
+  }
+
+  // ============ HANDOFF ROUTES ============
+
+  // Get handoffs for a workspace (inbox)
+  app.get("/api/ws/:workspaceId/handoffs", (req: Request, res: Response) => {
+    try {
+      const { workspaceId } = req.params;
+      const status = req.query.status as HandoffStatus | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const projectId = req.query.projectId as string || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const handoffs = getInboxHandoffs(projectId, workspaceId, status);
+      const unreadCount = getUnreadCount(projectId, workspaceId);
+      
+      res.json({ handoffs: handoffs.slice(0, limit), unreadCount });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a handoff (send to another workspace)
+  app.post("/api/ws/:workspaceId/handoffs", (req: Request, res: Response) => {
+    try {
+      const { workspaceId } = req.params;
+      const { toWorkspaceId, type, title, body, payload, fromAgentKey, toAgentKey } = req.body;
+      const projectId = req.body.projectId || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      if (!toWorkspaceId || !type || !title) {
+        return res.status(400).json({ error: "toWorkspaceId, type, and title are required" });
+      }
+      
+      const handoff = createHandoff(projectId, {
+        fromWorkspaceId: workspaceId,
+        toWorkspaceId,
+        fromAgentKey,
+        toAgentKey,
+        type,
+        title,
+        body,
+        payload,
+      });
+      
+      res.json(handoff);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Acknowledge a handoff
+  app.post("/api/handoffs/:handoffId/ack", (req: Request, res: Response) => {
+    try {
+      const { handoffId } = req.params;
+      const projectId = req.body.projectId || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const handoff = acknowledgeHandoff(projectId, handoffId);
+      if (!handoff) {
+        return res.status(404).json({ error: "Handoff not found" });
+      }
+      
+      res.json(handoff);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Mark a handoff as done
+  app.post("/api/handoffs/:handoffId/done", (req: Request, res: Response) => {
+    try {
+      const { handoffId } = req.params;
+      const projectId = req.body.projectId || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const handoff = markHandoffDone(projectId, handoffId);
+      if (!handoff) {
+        return res.status(404).json({ error: "Handoff not found" });
+      }
+      
+      res.json(handoff);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get a single handoff
+  app.get("/api/handoffs/:handoffId", (req: Request, res: Response) => {
+    try {
+      const { handoffId } = req.params;
+      const projectId = req.query.projectId as string || getActiveProjectId();
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "No active project" });
+      }
+      
+      const handoff = getHandoff(projectId, handoffId);
+      if (!handoff) {
+        return res.status(404).json({ error: "Handoff not found" });
+      }
+      
+      res.json(handoff);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============ END WORKSPACE/HANDOFF ROUTES ============
 
   // Get files for active project (or root if no project)
   function getProjectFilesRoot(): string {

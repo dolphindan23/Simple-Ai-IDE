@@ -9,6 +9,8 @@ import { TerminalPanel, TerminalState } from "@/components/TerminalPanel";
 import { AITeamPanel } from "@/components/AITeamPanel";
 import { WorkspaceHeader, WorkspaceTab } from "@/components/WorkspaceHeader";
 import { HeaderStatus, RunState } from "@/components/HeaderStatus";
+import { WorkspaceSelector } from "@/components/WorkspaceSelector";
+import { HandoffsInbox } from "@/components/HandoffsInbox";
 import { useAIRunEvents } from "@/hooks/useAIRunEvents";
 import { FileTabsBar } from "@/components/FileTabsBar";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -200,20 +202,70 @@ export default function IDEPage() {
     }
   }, [terminalState]);
 
-  // Fetch file tree
-  const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
-    queryKey: ["/api/files"],
-  });
-  
   const { data: projectsData } = useQuery<{ projects: { id: string; name: string }[]; activeProjectId: string | null }>({
     queryKey: ["/api/projects"],
   });
   const activeProjectId = projectsData?.activeProjectId || null;
 
-  // Fetch file content when a file is selected
+  // Workspace state - read from URL query param
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("ws") || "main";
+  });
+
+  // Fetch workspaces for current project
+  const { data: workspaces = [] } = useQuery<Array<{ id: string; name: string; kind: string; rootPath: string }>>({
+    queryKey: ["/api/projects", activeProjectId, "workspaces"],
+    queryFn: async () => {
+      if (!activeProjectId) return [];
+      const res = await fetch(`/api/projects/${activeProjectId}/workspaces`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeProjectId,
+  });
+
+  // Fetch file tree - workspace-scoped when not main
+  const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<FileNode[]>({
+    queryKey: ["/api/ws", currentWorkspaceId, "files"],
+    queryFn: async () => {
+      // Use workspace-scoped endpoint for non-main workspaces
+      if (currentWorkspaceId && currentWorkspaceId !== "main") {
+        const res = await fetch(`/api/ws/${currentWorkspaceId}/files`);
+        if (!res.ok) return [];
+        return res.json();
+      }
+      // Use legacy endpoint for main workspace (backward compatible)
+      const res = await fetch("/api/files");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  // Update URL when workspace changes
+  const handleWorkspaceChange = useCallback((wsId: string) => {
+    setCurrentWorkspaceId(wsId);
+    const url = new URL(window.location.href);
+    url.searchParams.set("ws", wsId);
+    window.history.replaceState({}, "", url.toString());
+    // Clear all file state when changing workspace
+    setOpenFiles([]);
+    setSelectedFile(null);
+    setFileContent("");
+    setOriginalContent("");
+    setIsDirty(false);
+    // File tree will auto-refetch due to queryKey change
+  }, []);
+
+  // Fetch file content when a file is selected - workspace-scoped
   useEffect(() => {
     if (selectedFile) {
-      fetch(`/api/files/content?path=${encodeURIComponent(selectedFile)}`)
+      // Use workspace-scoped endpoint for non-main workspaces
+      const endpoint = currentWorkspaceId && currentWorkspaceId !== "main"
+        ? `/api/ws/${currentWorkspaceId}/files/content?path=${encodeURIComponent(selectedFile)}`
+        : `/api/files/content?path=${encodeURIComponent(selectedFile)}`;
+      
+      fetch(endpoint)
         .then((res) => res.json())
         .then((data) => {
           if (data.content !== undefined) {
@@ -231,7 +283,7 @@ export default function IDEPage() {
           });
         });
     }
-  }, [selectedFile, toast]);
+  }, [selectedFile, currentWorkspaceId, toast]);
 
   // Track dirty state when content changes
   const handleContentChange = useCallback((newContent: string | undefined) => {
@@ -280,10 +332,21 @@ export default function IDEPage() {
     });
   }, [selectedFile]);
 
-  // Save file mutation
+  // Save file mutation - workspace-scoped
   const saveFileMutation = useMutation({
     mutationFn: async () => {
       if (!selectedFile) throw new Error("No file selected");
+      
+      // Use workspace-scoped endpoint for non-main workspaces
+      if (currentWorkspaceId && currentWorkspaceId !== "main") {
+        const response = await apiRequest("POST", `/api/ws/${currentWorkspaceId}/files/content`, {
+          path: selectedFile,
+          content: fileContent,
+        });
+        return response.json();
+      }
+      
+      // Use legacy endpoint for main workspace
       const response = await apiRequest("PUT", "/api/fs/file", {
         path: selectedFile,
         content: fileContent,
@@ -608,11 +671,18 @@ export default function IDEPage() {
       });
       refetchFiles();
       if (selectedFile) {
-        fetch(`/api/files/content?path=${encodeURIComponent(selectedFile)}`)
+        // Use workspace-scoped endpoint for non-main workspaces
+        const endpoint = currentWorkspaceId && currentWorkspaceId !== "main"
+          ? `/api/ws/${currentWorkspaceId}/files/content?path=${encodeURIComponent(selectedFile)}`
+          : `/api/files/content?path=${encodeURIComponent(selectedFile)}`;
+        
+        fetch(endpoint)
           .then((res) => res.json())
           .then((resData) => {
             if (resData.content !== undefined) {
               setFileContent(resData.content);
+              setOriginalContent(resData.content);
+              setIsDirty(false);
             }
           });
       }
@@ -1023,7 +1093,21 @@ export default function IDEPage() {
           <ResizablePanel defaultSize={55}>
             <div className="h-full flex flex-col">
               {/* Global Status Header */}
-              <div className="flex items-center justify-end h-5 bg-background border-b border-border px-1 shrink-0">
+              <div className="flex items-center justify-between h-6 bg-background border-b border-border px-1 shrink-0">
+                {/* Left: Workspace selector and handoffs */}
+                <div className="flex items-center gap-1">
+                  <WorkspaceSelector
+                    projectId={activeProjectId}
+                    currentWorkspaceId={currentWorkspaceId}
+                    onWorkspaceChange={handleWorkspaceChange}
+                  />
+                  <HandoffsInbox
+                    projectId={activeProjectId}
+                    currentWorkspaceId={currentWorkspaceId}
+                    workspaces={workspaces}
+                  />
+                </div>
+                {/* Right: Status chips */}
                 <HeaderStatus 
                   onNavigate={handleTabChange} 
                   showMainHeader={showMainHeader}
