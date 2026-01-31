@@ -80,6 +80,8 @@ export function WorkspaceTabs({
   onWorkspaceChange 
 }: WorkspaceTabsProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<WorkspaceKind>("generic");
   const [newBaseBranch, setNewBaseBranch] = useState("main");
@@ -130,6 +132,50 @@ export function WorkspaceTabs({
       });
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (workspaceId: string) => {
+      const res = await fetch(`/api/projects/${projectId}/workspaces/${workspaceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to delete workspace");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "workspaces"] });
+      setDeleteDialogOpen(false);
+      if (workspaceToDelete && currentWorkspaceId === workspaceToDelete.id) {
+        onWorkspaceChange("main");
+      }
+      toast({
+        title: "Workspace removed",
+        description: `"${workspaceToDelete?.name}" has been deleted.`,
+      });
+      setWorkspaceToDelete(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to remove workspace",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDeleteClick = (workspace: Workspace, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setWorkspaceToDelete(workspace);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (workspaceToDelete) {
+      deleteMutation.mutate(workspaceToDelete.id);
+    }
+  };
 
   const handleOpenInNewTab = (workspace: Workspace, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -186,14 +232,25 @@ export function WorkspaceTabs({
                       {fullWorkspace?.worktreeStatus?.hasChanges && (
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                       )}
-                      {workspace.id !== "main" && (
-                        <button
-                          onClick={(e) => handleOpenInNewTab(workspace as Workspace, e)}
-                          className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded"
-                          data-testid={`button-workspace-new-tab-${workspace.id}`}
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                        </button>
+                      {workspace.id !== "main" && fullWorkspace && (
+                        <div className="flex items-center ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => handleOpenInNewTab(fullWorkspace, e)}
+                            className="p-0.5 hover:bg-muted rounded"
+                            data-testid={`button-workspace-new-tab-${workspace.id}`}
+                            title="Open in new tab"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClick(fullWorkspace, e)}
+                            className="p-0.5 hover:bg-destructive/20 hover:text-destructive rounded"
+                            data-testid={`button-workspace-delete-${workspace.id}`}
+                            title="Remove workspace"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
                       )}
                     </button>
                   </TooltipTrigger>
@@ -298,6 +355,32 @@ export function WorkspaceTabs({
               data-testid="button-create-workspace-confirm"
             >
               {createMutation.isPending ? "Creating..." : "Create Workspace"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Workspace</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove "{workspaceToDelete?.name}"? 
+              This will delete the workspace's worktree and all uncommitted changes will be lost.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete-workspace"
+            >
+              {deleteMutation.isPending ? "Removing..." : "Remove Workspace"}
             </Button>
           </DialogFooter>
         </DialogContent>
