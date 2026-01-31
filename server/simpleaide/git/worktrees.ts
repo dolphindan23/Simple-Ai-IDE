@@ -195,6 +195,8 @@ export function removeWorktree(projectId: string, workspaceId: string, force: bo
   const worktreePath = path.join(getWorktreesDir(projectId), workspaceId);
   
   if (!fs.existsSync(worktreePath)) {
+    // Directory doesn't exist, clean up any stale worktree references
+    pruneWorktrees(projectId);
     return { success: true };
   }
   
@@ -209,9 +211,27 @@ export function removeWorktree(projectId: string, workspaceId: string, force: bo
     });
     
     if (result.status !== 0) {
-      return { success: false, error: result.stderr || "Failed to remove worktree" };
+      const errorMsg = result.stderr || "";
+      
+      // If git says it's not a working tree but directory exists, 
+      // fall back to manual removal (directory was created but not as proper worktree)
+      if (errorMsg.includes("is not a working tree") || errorMsg.includes("is not a valid worktree")) {
+        console.log(`[worktrees] Directory exists but not a git worktree, removing manually: ${worktreePath}`);
+        try {
+          fs.rmSync(worktreePath, { recursive: true, force: true });
+          // Clean up any stale worktree references
+          pruneWorktrees(projectId);
+          return { success: true };
+        } catch (rmError: any) {
+          return { success: false, error: `Failed to manually remove directory: ${rmError.message}` };
+        }
+      }
+      
+      return { success: false, error: errorMsg || "Failed to remove worktree" };
     }
     
+    // Clean up any stale worktree references after successful removal
+    pruneWorktrees(projectId);
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message || "Unknown error removing worktree" };
