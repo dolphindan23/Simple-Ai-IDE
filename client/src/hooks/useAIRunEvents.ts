@@ -8,6 +8,7 @@ interface BackendEvent {
   message: string;
   data: Record<string, unknown>;
   created_at: string;
+  workspace_id?: string | null;
 }
 
 export interface AIRunEvent {
@@ -17,6 +18,7 @@ export interface AIRunEvent {
   agent_role: string | null;
   payload: Record<string, unknown>;
   created_at: string;
+  workspace_id?: string | null;
 }
 
 function transformEvent(backendEvent: BackendEvent): AIRunEvent {
@@ -26,13 +28,15 @@ function transformEvent(backendEvent: BackendEvent): AIRunEvent {
     event_type: backendEvent.type as AIRunEvent["event_type"],
     agent_role: backendEvent.agent_id,
     payload: { ...backendEvent.data, message: backendEvent.message },
-    created_at: backendEvent.created_at
+    created_at: backendEvent.created_at,
+    workspace_id: backendEvent.workspace_id
   };
 }
 
 export interface AIRun {
   id: string;
   run_key: string | null;
+  workspace_id: string | null;
   mode: string;
   status: string;
   goal: string | null;
@@ -64,20 +68,32 @@ export interface AgentProfile {
   updated_at: string | null;
 }
 
+export type SidebarScope = "current" | "all";
+
 interface UseAIRunEventsResult {
   events: AIRunEvent[];
   runs: AIRun[];
   agentProfiles: AgentProfile[];
   isConnected: boolean;
   error: string | null;
+  sidebarWorkspaceId: string | null;
 }
 
-export function useAIRunEvents(): UseAIRunEventsResult {
+interface UseAIRunEventsOptions {
+  workspaceId?: string | null;
+  scope?: SidebarScope;
+}
+
+export function useAIRunEvents(options: UseAIRunEventsOptions = {}): UseAIRunEventsResult {
+  const { workspaceId, scope = "current" } = options;
+  const effectiveWorkspaceId = scope === "all" ? null : workspaceId;
+  
   const [events, setEvents] = useState<AIRunEvent[]>([]);
   const [runs, setRuns] = useState<AIRun[]>([]);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfile[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarWorkspaceId, setSidebarWorkspaceId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const profilesFetchedRef = useRef(false);
@@ -102,7 +118,10 @@ export function useAIRunEvents(): UseAIRunEventsResult {
     }
 
     try {
-      const es = new EventSource("/api/ai/stream");
+      const url = effectiveWorkspaceId 
+        ? `/api/ai/stream?workspaceId=${encodeURIComponent(effectiveWorkspaceId)}`
+        : "/api/ai/stream?workspaceId=all";
+      const es = new EventSource(url);
       eventSourceRef.current = es;
 
       es.onopen = () => {
@@ -181,10 +200,11 @@ export function useAIRunEvents(): UseAIRunEventsResult {
       setError("Failed to connect to event stream");
       setIsConnected(false);
     }
-  }, []);
+  }, [effectiveWorkspaceId]);
 
   useEffect(() => {
     connect();
+    setSidebarWorkspaceId(effectiveWorkspaceId);
 
     return () => {
       if (eventSourceRef.current) {
@@ -194,9 +214,9 @@ export function useAIRunEvents(): UseAIRunEventsResult {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [connect]);
+  }, [connect, effectiveWorkspaceId]);
 
-  return { events, runs, agentProfiles, isConnected, error };
+  return { events, runs, agentProfiles, isConnected, error, sidebarWorkspaceId };
 }
 
 export function useAgentProfiles(): { profiles: AgentProfile[]; loading: boolean } {

@@ -1081,6 +1081,8 @@ export default function IDEPage() {
                     onApplyDiff={handleApplyDiff}
                     isLoading={createTaskMutation.isPending}
                     projectId={activeProjectId}
+                    workspaceId={currentWorkspaceId}
+                    workspaceName={currentWorkspaceId || "main"}
                   />
                 </div>
               )}

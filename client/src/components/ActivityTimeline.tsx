@@ -20,6 +20,7 @@ interface ActivityTimelineProps {
   events: AIRunEvent[];
   agentProfiles: AgentProfile[];
   maxEvents?: number;
+  showWorkspaceBadge?: boolean;
 }
 
 const eventIcons: Record<string, typeof Play> = {
@@ -95,7 +96,7 @@ function getEventDescription(event: AIRunEvent): string {
   }
 }
 
-export function ActivityTimeline({ events, agentProfiles, maxEvents = 50 }: ActivityTimelineProps) {
+export function ActivityTimeline({ events, agentProfiles, maxEvents = 50, showWorkspaceBadge = false }: ActivityTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
@@ -145,7 +146,15 @@ export function ActivityTimeline({ events, agentProfiles, maxEvents = 50 }: Acti
                 <Icon className="w-3.5 h-3.5" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {showWorkspaceBadge && event.workspace_id && (
+                    <Badge 
+                      variant="outline" 
+                      className="text-[9px] px-1 py-0 h-4 uppercase font-mono"
+                    >
+                      {event.workspace_id}
+                    </Badge>
+                  )}
                   {agent && (
                     <span
                       className="text-[10px] font-medium px-1.5 py-0.5 rounded"

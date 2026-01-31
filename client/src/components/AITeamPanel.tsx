@@ -13,10 +13,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { Task, TaskMode, Artifact } from "@shared/schema";
-import { useAIRunEvents } from "@/hooks/useAIRunEvents";
+import { useAIRunEvents, type SidebarScope } from "@/hooks/useAIRunEvents";
 import { AgentRoster } from "@/components/AgentRosterCard";
 import { ActivityTimeline, CompactActivityFeed } from "@/components/ActivityTimeline";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
+import { SidebarScopeSelector } from "@/components/SidebarScopeSelector";
 
 interface AITeamPanelProps {
   goal: string;
@@ -27,6 +28,8 @@ interface AITeamPanelProps {
   onApplyDiff: (diffName: string) => void;
   isLoading: boolean;
   projectId?: string | null;
+  workspaceId?: string | null;
+  workspaceName?: string;
 }
 
 function formatLatency(ms?: number): string {
@@ -217,6 +220,8 @@ export function AITeamPanel({
   onApplyDiff,
   isLoading,
   projectId,
+  workspaceId,
+  workspaceName = "Current",
 }: AITeamPanelProps) {
   const [accurateMode, setAccurateMode] = useState(false);
   const [agentActivityMinimized, setAgentActivityMinimized] = useState(false);
@@ -444,13 +449,33 @@ export function AITeamPanel({
         isMinimized={agentActivityMinimized} 
         onToggleMinimize={() => setAgentActivityMinimized(!agentActivityMinimized)}
         projectId={projectId || null}
+        workspaceId={workspaceId}
+        workspaceName={workspaceName}
       />
     </div>
   );
 }
 
-function AgentVisibilitySection({ isMinimized, onToggleMinimize, projectId }: { isMinimized: boolean; onToggleMinimize: () => void; projectId: string | null }) {
-  const { events, agentProfiles, isConnected } = useAIRunEvents();
+interface AgentVisibilitySectionProps {
+  isMinimized: boolean;
+  onToggleMinimize: () => void;
+  projectId: string | null;
+  workspaceId?: string | null;
+  workspaceName?: string;
+}
+
+function AgentVisibilitySection({ 
+  isMinimized, 
+  onToggleMinimize, 
+  projectId, 
+  workspaceId,
+  workspaceName = "Current"
+}: AgentVisibilitySectionProps) {
+  const [sidebarScope, setSidebarScope] = useState<SidebarScope>("current");
+  const { events, agentProfiles, isConnected } = useAIRunEvents({
+    workspaceId,
+    scope: sidebarScope
+  });
   const [activeTab, setActiveTab] = useState<string>("activity");
 
   return (
@@ -465,6 +490,13 @@ function AgentVisibilitySection({ isMinimized, onToggleMinimize, projectId }: { 
           <span className="text-sm font-medium">Agent Activity</span>
         </div>
         <div className="flex items-center gap-2">
+          <div onClick={(e) => e.stopPropagation()}>
+            <SidebarScopeSelector 
+              scope={sidebarScope}
+              onScopeChange={setSidebarScope}
+              currentWorkspaceName={workspaceName}
+            />
+          </div>
           <Badge 
             variant="outline" 
             className={cn(
@@ -510,6 +542,7 @@ function AgentVisibilitySection({ isMinimized, onToggleMinimize, projectId }: { 
                   events={events} 
                   agentProfiles={agentProfiles} 
                   maxEvents={30}
+                  showWorkspaceBadge={sidebarScope === "all"}
                 />
               </div>
             </TabsContent>
