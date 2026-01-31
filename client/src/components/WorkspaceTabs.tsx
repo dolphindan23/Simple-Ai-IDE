@@ -360,7 +360,10 @@ export function WorkspaceTabs({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
+        setDeleteDialogOpen(open);
+        if (!open) setWorkspaceToDelete(null);
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Remove Workspace</DialogTitle>
@@ -371,7 +374,11 @@ export function WorkspaceTabs({
           </DialogHeader>
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteDialogOpen(false)}
+              data-testid="button-cancel-delete-workspace"
+            >
               Cancel
             </Button>
             <Button 
