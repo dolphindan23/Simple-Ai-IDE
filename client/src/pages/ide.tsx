@@ -1253,9 +1253,12 @@ export default function IDEPage() {
                   {explorerCollapsed ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 </Button>
                 {!explorerCollapsed && (
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Explorer
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <img src="/explorer-icon.png" alt="Explorer" className="h-4 w-4 rounded" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Explorer
+                    </span>
+                  </div>
                 )}
               </div>
               {!explorerCollapsed && (
