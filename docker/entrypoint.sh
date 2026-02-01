@@ -41,4 +41,4 @@ for i in $(seq 1 120); do
   fi
 done
 
-exec node dist/server.js
+exec npm run start
