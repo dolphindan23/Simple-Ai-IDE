@@ -291,7 +291,7 @@ export function AITeamPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-primary" />
+          <img src="/ai-team-icon.png" alt="AI Team" className="h-5 w-5 rounded" />
           <span className="font-semibold text-sm">AI Team</span>
         </div>
         <div className="flex items-center gap-2">
@@ -305,7 +305,7 @@ export function AITeamPanel({
           {/* Empty State */}
           {!currentTask && artifacts.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Bot className="h-12 w-12 text-muted-foreground/30 mb-3" />
+              <img src="/ai-team-icon.png" alt="AI Team" className="h-12 w-12 rounded mb-3 opacity-30" />
               <p className="text-sm text-muted-foreground">
                 AI responses will appear here
               </p>
