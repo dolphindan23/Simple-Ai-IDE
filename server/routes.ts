@@ -43,6 +43,8 @@ import { bootstrapProject } from "./simpleaide/git/bootstrap";
 import { validateRemoteUrl } from "./simpleaide/git/gitUrl";
 import { listGitOps, getProjectRemote, getGitOp, createGitOp, updateGitOp } from "./simpleaide/db";
 import { generateOpId } from "./simpleaide/git/gitWorker";
+import { ollamaFetch, ollamaJson, getOllamaBaseUrl } from "./lib/ollamaClient";
+import { createJob, getJob, listJobs, updateJob, clearCompletedJobs, type PullJob } from "./lib/ollamaJobs";
 import { 
   listWorkspaces as listProjectWorkspaces, 
   getWorkspace, 
@@ -4078,6 +4080,145 @@ export async function registerRoutes(
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // Ollama Model Manager Routes
+  // ============================================
+
+  function parseNdjsonLines(buf: string): any[] {
+    return buf
+      .split("\n")
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(line => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean);
+  }
+
+  app.get("/api/ollama/version", async (_req: Request, res: Response) => {
+    try {
+      const data = await ollamaJson<{ version: string }>("/api/version");
+      res.json({ reachable: true, baseUrl: getOllamaBaseUrl(), ...data });
+    } catch (e: any) {
+      res.status(503).json({ reachable: false, error: e?.message || "unreachable" });
+    }
+  });
+
+  app.get("/api/ollama/models", async (_req: Request, res: Response) => {
+    try {
+      const tags = await ollamaJson<{ models: Array<{ name: string; size?: number; modified_at?: string; digest?: string }> }>("/api/tags");
+      res.json({
+        installed: (tags.models || []).map(m => ({
+          name: m.name,
+          sizeBytes: m.size,
+          modifiedAt: m.modified_at,
+          digest: m.digest,
+        })),
+        jobs: listJobs(),
+      });
+    } catch (e: any) {
+      res.status(503).json({ error: e?.message || "failed to list models" });
+    }
+  });
+
+  app.post("/api/ollama/pull", async (req: Request, res: Response) => {
+    const model = String(req.body?.model || "").trim();
+    if (!model) return res.status(400).json({ error: "model is required" });
+
+    const jobId = nanoid();
+    createJob(jobId, model);
+
+    res.status(202).json({ jobId });
+
+    try {
+      updateJob(jobId, { status: "pulling", message: "starting pull..." });
+
+      const pullRes = await ollamaFetch("/api/pull", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: model, stream: true }),
+      });
+
+      if (!pullRes.ok || !pullRes.body) {
+        const txt = await pullRes.text().catch(() => "");
+        updateJob(jobId, { status: "error", error: `pull failed: ${pullRes.status} ${txt}` });
+        return;
+      }
+
+      const reader = pullRes.body.getReader();
+      const decoder = new TextDecoder();
+      let carry = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        carry += chunk;
+
+        const lastNewline = carry.lastIndexOf("\n");
+        if (lastNewline === -1) continue;
+
+        const block = carry.slice(0, lastNewline);
+        carry = carry.slice(lastNewline + 1);
+
+        const msgs = parseNdjsonLines(block);
+        for (const m of msgs) {
+          const statusText = String(m.status || "");
+          const completed = typeof m.completed === "number" ? m.completed : undefined;
+          const total = typeof m.total === "number" ? m.total : undefined;
+
+          let progress = getJob(jobId)?.progress ?? 0;
+          if (completed != null && total && total > 0) progress = Math.max(0, Math.min(1, completed / total));
+
+          updateJob(jobId, {
+            status: statusText.toLowerCase().includes("verif") ? "verifying" : "pulling",
+            message: statusText || "pulling...",
+            downloadedBytes: completed,
+            totalBytes: total,
+            progress,
+          });
+        }
+      }
+
+      updateJob(jobId, { status: "done", progress: 1, message: "done" });
+    } catch (e: any) {
+      updateJob(jobId, { status: "error", error: e?.message || "pull crashed" });
+    }
+  });
+
+  app.get("/api/ollama/pull/:jobId", (req: Request, res: Response) => {
+    const job = getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "job not found" });
+    res.json(job);
+  });
+
+  app.get("/api/ollama/jobs", (_req: Request, res: Response) => {
+    res.json({ jobs: listJobs() });
+  });
+
+  app.post("/api/ollama/jobs/clear", (_req: Request, res: Response) => {
+    clearCompletedJobs();
+    res.json({ ok: true, jobs: listJobs() });
+  });
+
+  app.delete("/api/ollama/model/:name", async (req: Request, res: Response) => {
+    const name = decodeURIComponent(req.params.name);
+    try {
+      const r = await ollamaFetch("/api/delete", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        return res.status(400).json({ error: txt || `delete failed (${r.status})` });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "delete crashed" });
     }
   });
 
