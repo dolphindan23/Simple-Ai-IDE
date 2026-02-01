@@ -219,17 +219,17 @@ After starting either profile, run these commands to verify:
 
 **Ollama Profile:**
 ```bash
-# Check Ollama is responding
-curl -s http://localhost:11434/api/version | jq .
+# Check Ollama is responding (default host port: 11439)
+curl -s http://localhost:11439/api/version | jq .
 
 # List available models
-curl -s http://localhost:11434/api/tags | jq '.models[].name'
+curl -s http://localhost:11439/api/tags | jq '.models[].name'
 
 # Check app is responding
 curl -s http://localhost:8521/api/status | jq .
 
 # Test Ollama chat completion
-curl -s http://localhost:11434/api/chat -d '{
+curl -s http://localhost:11439/api/chat -d '{
   "model": "qwen2.5:7b",
   "messages": [{"role": "user", "content": "Say hello in 5 words."}],
   "stream": false
@@ -407,7 +407,7 @@ For AI features, install and configure Ollama:
    ```
 4. Configure in SimpleAide Settings > AI tab
 
-The default Ollama endpoint is `http://localhost:11434`.
+The default Ollama endpoint is `http://localhost:11434` (native install) or `http://localhost:11439` (Docker container).
 
 ### AI Agents
 
@@ -439,11 +439,26 @@ Configure agent settings (model, temperature, context length) in Settings > AI A
 | `LLM_BASE_URL` | LLM server URL | (auto-resolved based on backend) |
 | `LLM_MODEL` | Model name | (auto-resolved based on backend) |
 
+### Ollama Port Configuration (Docker)
+
+By default, SimpleAide runs the Ollama Docker container on host port **11439**.
+
+This avoids conflicts with native Ollama installations, which typically bind to **11434**.
+
+| Component | Address |
+|-----------|---------|
+| Host access (debugging) | `http://localhost:11439` |
+| Internal Docker access (used by app) | `http://ollama:11434` |
+| Native Ollama (if installed) | `http://localhost:11434` |
+
+To change the host port, edit `OLLAMA_HOST_PORT` in `.env.docker`.
+
 ### Ollama Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
+| `OLLAMA_HOST_PORT` | Host port for Ollama container | `11439` |
+| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` (native) |
 | `OLLAMA_MODEL` | Default model name | `qwen2.5:7b` |
 | `OLLAMA_CONNECT_TIMEOUT_MS` | Connection timeout (ms) | `5000` |
 | `OLLAMA_REQUEST_TIMEOUT_MS` | Request timeout for generation (ms) | `300000` (5 min) |

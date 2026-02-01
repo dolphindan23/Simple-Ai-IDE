@@ -4,10 +4,20 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Load host port from .env.docker if available, default to 11439
+OLLAMA_HOST_PORT="${OLLAMA_HOST_PORT:-11439}"
+if [ -f ".env.docker" ]; then
+    source <(grep -E '^OLLAMA_HOST_PORT=' .env.docker 2>/dev/null) || true
+fi
+OLLAMA_HOST_PORT="${OLLAMA_HOST_PORT:-11439}"
+
 echo "=========================================="
 echo "  SimpleAide Docker GPU Deployment"
 echo "  Backend: Ollama"
 echo "=========================================="
+echo ""
+echo "  Ollama container exposed on host port: $OLLAMA_HOST_PORT"
+echo "  (Internal container port remains 11434)"
 echo ""
 
 # Check for .env.docker file
@@ -87,7 +97,10 @@ echo "  Deployment Complete!"
 echo "=========================================="
 echo ""
 echo "  App URL:     http://localhost:8521"
-echo "  Ollama API:  http://localhost:11434"
+echo "  Ollama API:  http://localhost:$OLLAMA_HOST_PORT"
+echo ""
+echo "  Note: The app connects to Ollama internally via http://ollama:11434"
+echo "        Host port $OLLAMA_HOST_PORT is for external/debugging access."
 echo ""
 echo "  Useful commands:"
 echo "    View app logs:     docker logs -f simpleaide-app"
