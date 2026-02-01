@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync, spawn } from "child_process";
 import { captureRepoSnapshot, formatSnapshotForPrompt, extractTargetFilesFromGoal } from "./repoSnapshot";
+import { detectProject, hasPython3Available, looksNonCode } from "./projectDetect";
 import { 
   validatePatch, 
   extractDiffFromResponse, 
@@ -116,7 +117,8 @@ function getOrCreateRunId(taskId: string, mode: TaskMode, goal?: string, agents?
     goal: goal || null,
     agents: agents || [mode === "plan" ? "planner" : mode === "review" ? "reviewer" : mode === "test" ? "testfixer" : "coder"],
     fast_mode: fastMode || false,
-    created_by_user_id: null
+    created_by_user_id: null,
+    workspace_id: null
   });
   
   taskRunMap.set(taskId, run.id);
@@ -310,6 +312,75 @@ async function runImplementMode(task: Task, ollama: LLMAdapter): Promise<void> {
   
   const cwd = path.resolve(task.repoPath);
   
+  // Check if LLM is available FIRST before doing any work
+  const isAvailable = await ollama.isAvailable();
+  
+  // Handle non-code requests (e.g., "create 10 math questions")
+  if (looksNonCode(task.goal)) {
+    log(task.id, "[INFO] Detected non-code request. Generating content instead of code diff.\n");
+    
+    if (!isAvailable) {
+      const errorMsg = `# Cannot Generate Content
+
+LLM backend is not available, so AI Team cannot generate content right now.
+
+**Your request:** ${task.goal}
+
+**How to fix:**
+1. Start Ollama or configure a LLM backend in Settings → AI Providers
+2. Retry this request
+
+This request looks like content generation (not a code change), so no code patches will be created.
+`;
+      storage.setArtifact(task.id, "answer.md", errorMsg);
+      log(task.id, "[ERROR] LLM not available for content generation\n");
+      emitAgentStatus(runId, "coder", "error", "LLM not available");
+      emitRunStatus(runId, "failed", "LLM backend unavailable");
+      return;
+    }
+    
+    // Generate content response instead of code patch
+    const contentPrompt = `User request: ${task.goal}
+
+You are a helpful assistant. Respond directly to the user's request.
+Provide the content they asked for in a well-formatted Markdown response.
+Do NOT generate code patches, diffs, or modify any files.
+Just answer their question or create the content they requested.`;
+
+    let response = "";
+    await ollama.generate(contentPrompt, (token) => {
+      response += token;
+    });
+    
+    storage.setArtifact(task.id, "answer.md", response);
+    log(task.id, "[SUCCESS] Content generated (no code changes needed)\n");
+    emitAgentStatus(runId, "coder", "done", "Content generated");
+    emitRunStatus(runId, "completed", "Content generated successfully");
+    return;
+  }
+  
+  // Block implement mode if LLM is not available (don't generate stub diffs)
+  if (!isAvailable) {
+    const errorMsg = `# Implement Mode Blocked
+
+**Reason:** LLM backend is not available.
+
+Implement mode generates code patches that must be validated. Without a real LLM, stub output often references non-existent files, causing "Failed to apply diff" errors.
+
+**How to fix:**
+1. Start Ollama: \`ollama serve\` (or Docker: \`docker-compose up ollama\`)
+2. Or configure a different LLM backend in Settings → AI Providers
+3. Retry the Implement action
+
+**Your goal:** ${task.goal}
+`;
+    storage.setArtifact(task.id, "error.md", errorMsg);
+    log(task.id, "[ERROR] Implement mode blocked: LLM not available\n");
+    emitAgentStatus(runId, "coder", "error", "LLM not available");
+    emitRunStatus(runId, "failed", "LLM backend unavailable - cannot generate code");
+    return;
+  }
+  
   emitStep(runId, "coder", "Capturing repository snapshot", undefined, { step_index: 1, step_total: 4, phase: "implement" });
   log(task.id, "[INFO] Capturing repository snapshot...\n");
   const targetFiles = extractTargetFilesFromGoal(task.goal, cwd);
@@ -366,23 +437,6 @@ CONSTRAINTS:
 Output ONLY the unified diff. No explanations before or after.`;
 
   try {
-    const isAvailable = await ollama.isAvailable();
-    if (!isAvailable) {
-      log(task.id, "[WARN] Ollama not available. Using stub diff.\n");
-      const stubDiff = `--- a/README.md
-+++ b/README.md
-@@ -1 +1,3 @@
--# Project
-+# Project
-+
-+Updated by SimpleAide agent for: ${task.goal}
-`;
-      storage.setArtifact(task.id, "patch_1.diff", stubDiff);
-      log(task.id, "[SUCCESS] Implementation generated (stub mode)\n");
-      emitAgentStatus(runId, "coder", "done", "Implementation generated (stub mode)");
-      emitRunStatus(runId, "completed", "Implementation generated in stub mode");
-      return;
-    }
 
     log(task.id, "[INFO] Generating code with AI...\n");
     
@@ -438,6 +492,29 @@ async function runReviewMode(task: Task, ollama: LLMAdapter): Promise<void> {
   
   log(task.id, `[INFO] Starting code review... (${modeLabel} mode)\n`);
   
+  // Check LLM availability first - review mode requires LLM
+  const isAvailable = await ollama.isAvailable();
+  if (!isAvailable) {
+    const errorMsg = `# Review Mode Blocked
+
+**Reason:** LLM backend is not available.
+
+Review mode requires the LLM to analyze code and produce meaningful feedback. Without a real LLM, only placeholder content would be generated.
+
+**How to fix:**
+1. Start Ollama: \`ollama serve\` (or Docker: \`docker-compose up ollama\`)
+2. Or configure a different LLM backend in Settings → AI Providers
+3. Retry the Review action
+
+**Your goal:** ${task.goal}
+`;
+    storage.setArtifact(task.id, "error.md", errorMsg);
+    log(task.id, "[ERROR] Review mode blocked: LLM not available\n");
+    emitAgentStatus(runId, "reviewer", "error", "LLM not available");
+    emitRunStatus(runId, "failed", "LLM backend unavailable - cannot perform review");
+    return;
+  }
+  
   const prompt = `You are a senior code reviewer. Review the following goal/changes:
 
 Goal: ${task.goal}
@@ -452,32 +529,6 @@ Provide a thorough code review with:
 Be specific and actionable.`;
 
   try {
-    const isAvailable = await ollama.isAvailable();
-    if (!isAvailable) {
-      log(task.id, "[WARN] Ollama not available. Using stub review.\n");
-      const stubReview = `# Code Review
-
-## Goal Reviewed
-${task.goal}
-
-## Assessment
-- Code structure: Needs review with Ollama enabled
-- Security: Run security scan when Ollama is available
-- Performance: Analyze after implementation
-
-## Recommendations
-1. Enable Ollama for detailed code analysis
-2. Run automated tests
-3. Check for edge cases
-
-*Generated in stub mode - enable Ollama for full review*
-`;
-      storage.setArtifact(task.id, "review.md", stubReview);
-      log(task.id, "[SUCCESS] Review generated (stub mode)\n");
-      emitAgentStatus(runId, "reviewer", "done", "Review generated (stub mode)");
-      emitRunStatus(runId, "completed", "Review generated in stub mode");
-      return;
-    }
 
     log(task.id, "[INFO] Generating review with AI...\n");
     
@@ -502,56 +553,111 @@ async function runTestMode(task: Task, ollama: LLMAdapter): Promise<void> {
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   
   emitRunStatus(runId, "running", `Running tests (${modeLabel} mode)`);
-  emitAgentStatus(runId, "testfixer", "working", "Running test suite");
+  emitAgentStatus(runId, "testfixer", "working", "Detecting project type");
   
   log(task.id, `[INFO] Running tests... (${modeLabel} mode)\n`);
   
-  // Try to run pytest if available
   const cwd = path.resolve(task.repoPath);
   
-  log(task.id, "[INFO] Attempting to run pytest...\n");
-  emitToolCall(runId, "testfixer", "python3 -m pytest -v", "Running pytest test suite");
-  const pytestResult = runCommand(["python3", "-m", "pytest", "-v"], cwd);
+  // Detect project type
+  const projectInfo = detectProject(cwd);
+  log(task.id, `[INFO] Detected project type: ${projectInfo.type}\n`);
   
   let testOutput = "";
+  let testsRan = false;
+  let testsPassed = false;
   
-  if (pytestResult.exitCode === 0) {
-    testOutput = `# Test Results\n\n## pytest output:\n\`\`\`\n${pytestResult.stdout}\n\`\`\`\n`;
-    log(task.id, "[SUCCESS] Tests passed\n");
-  } else if (pytestResult.stderr.includes("No module named pytest")) {
-    log(task.id, "[WARN] pytest not installed. Generating test suggestions...\n");
-    
-    // Generate test suggestions using AI
-    const prompt = `Generate pytest test cases for the following goal:
-
-Goal: ${task.goal}
-
-Provide complete, runnable pytest code.`;
-
-    const isAvailable = await ollama.isAvailable();
-    if (isAvailable) {
-      let response = "";
-      await ollama.generate(prompt, (token) => {
-        response += token;
-      });
-      testOutput = `# Test Suggestions\n\n${response}`;
+  // Try Node.js tests first if this is a Node project
+  if (projectInfo.type === "node" || projectInfo.type === "mixed") {
+    if (projectInfo.nodeTestCommand) {
+      log(task.id, `[INFO] Running Node.js tests: ${projectInfo.nodeTestCommand}\n`);
+      emitAgentStatus(runId, "testfixer", "working", "Running Node.js test suite");
+      emitToolCall(runId, "testfixer", projectInfo.nodeTestCommand, "Running Node.js tests");
+      
+      const pm = projectInfo.nodePackageManager || "npm";
+      const nodeResult = runCommand([pm, "test"], cwd);
+      testsRan = true;
+      
+      if (nodeResult.exitCode === 0) {
+        testOutput += `# Node.js Test Results\n\n## ${projectInfo.nodeTestCommand} output:\n\`\`\`\n${nodeResult.stdout}\n\`\`\`\n\n`;
+        testsPassed = true;
+        log(task.id, "[SUCCESS] Node.js tests passed\n");
+      } else {
+        testOutput += `# Node.js Test Results\n\n## Errors:\n\`\`\`\n${nodeResult.stderr || nodeResult.stdout}\n\`\`\`\n\n`;
+        log(task.id, "[ERROR] Node.js tests failed\n");
+      }
     } else {
-      testOutput = `# Test Suggestions\n\nOllama not available. Please write tests for: ${task.goal}`;
+      log(task.id, "[WARN] No npm test script found in package.json\n");
+      testOutput += `# Node.js Tests\n\nNo \`test\` script found in package.json. Add a test script to enable automatic testing.\n\n`;
     }
-    
-    log(task.id, "[INFO] Test suggestions generated\n");
-  } else {
-    testOutput = `# Test Results\n\n## Errors:\n\`\`\`\n${pytestResult.stderr || pytestResult.stdout}\n\`\`\`\n`;
-    log(task.id, "[ERROR] Tests failed. See output for details.\n");
+  }
+  
+  // Try Python tests if this is a Python project and python3 is available
+  if (projectInfo.type === "python" || projectInfo.type === "mixed") {
+    if (hasPython3Available()) {
+      log(task.id, "[INFO] Running Python tests: python3 -m pytest -v\n");
+      emitAgentStatus(runId, "testfixer", "working", "Running Python test suite");
+      emitToolCall(runId, "testfixer", "python3 -m pytest -v", "Running pytest test suite");
+      
+      const pytestResult = runCommand(["python3", "-m", "pytest", "-v"], cwd);
+      testsRan = true;
+      
+      if (pytestResult.exitCode === 0) {
+        testOutput += `# Python Test Results\n\n## pytest output:\n\`\`\`\n${pytestResult.stdout}\n\`\`\`\n`;
+        testsPassed = true;
+        log(task.id, "[SUCCESS] Python tests passed\n");
+      } else if (pytestResult.stderr.includes("No module named pytest")) {
+        log(task.id, "[WARN] pytest not installed. Trying unittest...\n");
+        
+        const unittestResult = runCommand(["python3", "-m", "unittest", "discover", "-v"], cwd);
+        if (unittestResult.exitCode === 0) {
+          testOutput += `# Python Test Results\n\n## unittest output:\n\`\`\`\n${unittestResult.stdout}\n\`\`\`\n`;
+          testsPassed = true;
+          log(task.id, "[SUCCESS] Python unittest passed\n");
+        } else {
+          testOutput += `# Python Tests\n\npytest not installed. unittest output:\n\`\`\`\n${unittestResult.stderr || unittestResult.stdout}\n\`\`\`\n`;
+        }
+      } else {
+        testOutput += `# Python Test Results\n\n## Errors:\n\`\`\`\n${pytestResult.stderr || pytestResult.stdout}\n\`\`\`\n`;
+        log(task.id, "[ERROR] Python tests failed\n");
+      }
+    } else {
+      log(task.id, "[WARN] Python project detected but python3 is not available\n");
+      testOutput += `# Python Tests\n\nPython project detected but \`python3\` is not installed in this environment.\n\n`;
+    }
+  }
+  
+  // Handle unknown project type
+  if (projectInfo.type === "unknown") {
+    testOutput = `# No Tests Detected
+
+**Project type:** Unknown
+
+This project doesn't appear to be a recognizable Node.js or Python project.
+
+**Detected signals:**
+- package.json: ${projectInfo.hasPackageJson ? "Yes" : "No"}
+- pyproject.toml: ${projectInfo.hasPyProject ? "Yes" : "No"}
+- requirements.txt: ${projectInfo.hasRequirements ? "Yes" : "No"}
+
+**How to enable tests:**
+- For Node.js: Add a \`package.json\` with a \`scripts.test\` entry
+- For Python: Add \`pyproject.toml\` or \`requirements.txt\` and install pytest
+`;
+    log(task.id, "[INFO] Unknown project type - no tests configured\n");
   }
 
   storage.setArtifact(task.id, "test.log", testOutput);
   
-  if (pytestResult.exitCode === 0) {
+  if (testsRan && testsPassed) {
     emitAgentStatus(runId, "testfixer", "done", "All tests passed");
     emitRunStatus(runId, "completed", "Tests completed successfully");
-  } else if (!pytestResult.stderr.includes("No module named pytest")) {
+  } else if (testsRan && !testsPassed) {
     emitAgentStatus(runId, "testfixer", "error", "Tests failed");
+    emitRunStatus(runId, "failed", "Some tests failed");
+  } else {
+    emitAgentStatus(runId, "testfixer", "done", "No tests to run");
+    emitRunStatus(runId, "completed", "No tests configured");
   }
 }
 

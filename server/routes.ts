@@ -1041,6 +1041,50 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.message });
       }
       
+      // Validate repoPath for modes that need it
+      let repoPath = parsed.data.repoPath || "";
+      const mode = parsed.data.mode;
+      
+      // For implement/test/review modes, we need a valid project
+      if (mode === "implement" || mode === "test" || mode === "review") {
+        // If no repoPath provided or it's ".", try to use active project
+        if (!repoPath || repoPath === "." || repoPath === "") {
+          const activeProjectPath = getActiveProjectPath();
+          if (activeProjectPath) {
+            repoPath = activeProjectPath;
+          } else {
+            return res.status(400).json({ 
+              error: "No active project selected. Open a project in the Explorer before running AI Team tasks.",
+              code: "NO_PROJECT"
+            });
+          }
+        }
+        
+        // Validate the path exists and is within PROJECTS_DIR
+        const resolvedPath = path.resolve(repoPath);
+        if (!fs.existsSync(resolvedPath)) {
+          return res.status(400).json({ 
+            error: `Project path does not exist: ${repoPath}`,
+            code: "INVALID_PATH"
+          });
+        }
+        
+        // Security check - ensure path is strictly within PROJECTS_DIR using path.relative
+        const projectsResolved = path.resolve(PROJECTS_DIR);
+        const relativePath = path.relative(projectsResolved, resolvedPath);
+        
+        // Path is outside PROJECTS_DIR if relative starts with ".." or is absolute
+        if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+          return res.status(403).json({ 
+            error: "Project path must be within the projects directory",
+            code: "FORBIDDEN_PATH"
+          });
+        }
+        
+        // Use the validated path
+        parsed.data.repoPath = resolvedPath;
+      }
+      
       const task = await storage.createTask(parsed.data);
       
       // Start task in background
