@@ -33,18 +33,6 @@
   "aiAgents": {
     "backends": [
       {
-        "id": "backend_1769697428667",
-        "name": "croptech",
-        "baseUrl": "https://ollama.croptech.ai",
-        "authType": "none"
-      },
-      {
-        "id": "backend_1769697496471",
-        "name": "gpu-serv",
-        "baseUrl": "https://gpuserv.croptech.ai",
-        "authType": "none"
-      },
-      {
         "id": "backend_1769697641770",
         "name": "Local Local",
         "baseUrl": "http://localhost:11434",
@@ -57,7 +45,7 @@
         "authType": "none"
       }
     ],
-    "defaultBackendId": "backend_1769697428667",
+    "defaultBackendId": "backend_1769697641770",
     "roles": {}
   },
   "trust": {
