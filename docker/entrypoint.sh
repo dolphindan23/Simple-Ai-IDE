@@ -28,8 +28,10 @@ fi
 
 echo "[entrypoint] Probing: $PROBE"
 
+# Use Node's built-in fetch (available in Node 20+) instead of wget/curl
+# which may not be installed in slim images
 for i in $(seq 1 120); do
-  if wget -qO- "$PROBE" >/dev/null 2>&1; then
+  if node -e "fetch('$PROBE').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))" 2>/dev/null; then
     echo "[entrypoint] LLM is up."
     break
   fi
