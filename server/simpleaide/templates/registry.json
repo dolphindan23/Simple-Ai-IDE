@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "templates": [
-    { "id": "base-node", "path": "base-node/template.json" },
-    { "id": "base-python", "path": "base-python/template.json" },
-    { "id": "stripe-payments", "path": "stripe-payments/template.json" }
-  ]
-}
