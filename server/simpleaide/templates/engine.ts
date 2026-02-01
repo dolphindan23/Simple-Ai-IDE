@@ -2,9 +2,23 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const TEMPLATES_DIR = path.join(__dirname);
+// CJS-safe dirname resolver - works in both CommonJS (production build) and ESM (dev mode)
+const getDirname = (): string => {
+  // In CJS (production bundle), __dirname is available
+  if (typeof __dirname !== "undefined") {
+    return __dirname;
+  }
+  // In ESM (dev mode with tsx), use import.meta.url
+  // @ts-ignore - import.meta.url may not be available in CJS
+  if (typeof import.meta !== "undefined" && import.meta.url) {
+    // @ts-ignore
+    return path.dirname(fileURLToPath(import.meta.url));
+  }
+  // Fallback: use process.cwd() + expected path
+  return path.join(process.cwd(), "server", "simpleaide", "templates");
+};
+
+const TEMPLATES_DIR = getDirname();
 
 export interface TemplateVariable {
   default: string;
