@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X, FolderKanban, Trash2, AlertTriangle } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { Settings as SettingsType } from "@shared/schema";
 import { useTheme, type Theme } from "./ThemeProvider";
@@ -24,10 +25,34 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { toast } = useToast();
   const { setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsType | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   const { data: savedSettings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
     enabled: open,
+  });
+
+  const { data: activeProject } = useQuery<{ id: string; name: string } | null>({
+    queryKey: ["/api/projects/active"],
+    enabled: open,
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      return apiRequest("DELETE", `/api/projects/${projectId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/active"] });
+      toast({ title: "Project deleted", description: "The project has been permanently removed." });
+      setShowDeleteConfirm(false);
+      setDeleteConfirmText("");
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   useEffect(() => {
@@ -76,7 +101,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-4" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-5" data-testid="settings-tabs">
             <TabsTrigger value="general" className="flex items-center gap-1" data-testid="tab-general">
               <Monitor className="w-4 h-4" />
               General
@@ -92,6 +117,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <TabsTrigger value="trust" className="flex items-center gap-1" data-testid="tab-trust">
               <Shield className="w-4 h-4" />
               Trust
+            </TabsTrigger>
+            <TabsTrigger value="project" className="flex items-center gap-1" data-testid="tab-project">
+              <FolderKanban className="w-4 h-4" />
+              Project
             </TabsTrigger>
           </TabsList>
 
@@ -477,7 +506,83 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </div>
             </div>
           </TabsContent>
+
+          <TabsContent value="project" className="space-y-4 mt-4" data-testid="panel-project">
+            <div className="space-y-4">
+              {activeProject ? (
+                <>
+                  <div className="p-3 rounded-md bg-muted/50">
+                    <Label className="text-sm">Current Project</Label>
+                    <p className="text-lg font-medium mt-1">{activeProject.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono mt-1">{activeProject.id}</p>
+                  </div>
+
+                  <div className="border border-destructive/30 rounded-md p-4 space-y-3 bg-destructive/5">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="w-5 h-5" />
+                      <Label className="text-destructive font-semibold">Danger Zone</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Deleting a project permanently removes all files, workspaces, and settings. This action cannot be undone.
+                    </p>
+                    <Button 
+                      variant="destructive" 
+                      onClick={() => setShowDeleteConfirm(true)}
+                      data-testid="button-delete-project"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Project
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FolderKanban className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p>No project selected</p>
+                  <p className="text-sm">Select a project to manage its settings</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
         </Tabs>
+
+        <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="w-5 h-5" />
+                Delete Project?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <p>
+                  This will permanently delete <strong>{activeProject?.name}</strong> and all its contents including files, workspaces, and settings.
+                </p>
+                <p className="font-medium">
+                  Type <span className="font-mono text-foreground bg-muted px-1 rounded">{activeProject?.name}</span> to confirm:
+                </p>
+                <Input
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type project name to confirm"
+                  data-testid="input-delete-confirm"
+                />
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setDeleteConfirmText("")} data-testid="button-cancel-delete">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => activeProject && deleteProjectMutation.mutate(activeProject.id)}
+                disabled={deleteConfirmText !== activeProject?.name || deleteProjectMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete"
+              >
+                {deleteProjectMutation.isPending ? "Deleting..." : "Delete Project"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-settings">
