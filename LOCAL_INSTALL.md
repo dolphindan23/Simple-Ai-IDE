@@ -471,9 +471,11 @@ To change the host port, edit `OLLAMA_HOST_PORT` in `.env.docker`.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HF_TOKEN` | HuggingFace access token (for gated models) | (not set) |
+| `VLLM_IMAGE` | vLLM Docker image (pin for GPU compat) | `vllm/vllm-openai:latest` |
 | `VLLM_MODEL` | HuggingFace model ID | `Qwen/Qwen2.5-7B-Instruct` |
 | `VLLM_DTYPE` | Inference data type | `float16` |
-| `VLLM_MAX_MODEL_LEN` | Maximum context length | `8192` |
+| `VLLM_MAX_MODEL_LEN` | Maximum context length | `4096` |
+| `VLLM_GPU_MEMORY_UTILIZATION` | GPU memory target (0.0-1.0) | `0.75` |
 | `OPENAI_API_KEY` | API key for remote OpenAI-compat servers | (not set) |
 | `OPENAI_ORG_ID` | OpenAI organization ID | (not set) |
 | `OPENAI_PROJECT_ID` | OpenAI project ID | (not set) |
@@ -505,8 +507,27 @@ CUDA capability mismatch: supported (8.0)-(12.0), found 12.1
 
 This means the vLLM Docker image doesn't support your GPU architecture yet. Options:
 - **Use Ollama backend instead** (more hardware-compatible)
-- **Pin to a specific vLLM image** that matches your CUDA stack
+- **Pin to a specific vLLM image** by setting `VLLM_IMAGE` in `.env.docker` to a nightly/dev build that supports your GPU
 - **Wait for vLLM updates** that support newer compute capabilities
+
+#### GPU Memory Configuration
+
+If you encounter out-of-memory (OOM) errors:
+
+```
+Free memory ... is less than desired GPU memory utilization (0.9 ...)
+```
+
+Lower the GPU memory target in `.env.docker`:
+
+```bash
+VLLM_GPU_MEMORY_UTILIZATION=0.75  # Default, leaves headroom
+VLLM_MAX_MODEL_LEN=4096           # Lower context = less KV cache memory
+```
+
+For GPUs with limited VRAM (8GB), try:
+- `VLLM_GPU_MEMORY_UTILIZATION=0.6`
+- `VLLM_MAX_MODEL_LEN=2048`
 
 #### Multi-Provider Configuration
 

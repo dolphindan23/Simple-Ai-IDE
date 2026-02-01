@@ -73,7 +73,7 @@ services:
 
   vllm:
     profiles: ["vllm"]
-    image: vllm/vllm-openai:latest
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     container_name: simpleaide-vllm
     restart: unless-stopped
     ports:
@@ -95,7 +95,8 @@ services:
     command: >
       --model ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
       --dtype ${VLLM_DTYPE:-float16}
-      --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-4096}
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.75}
       --host 0.0.0.0
       --port 8000
     healthcheck:

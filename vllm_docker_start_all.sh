@@ -16,6 +16,7 @@ if [ ! -f ".env.docker" ]; then
     echo "    Creating from template..."
     if [ -f ".env.docker.example" ]; then
         cp .env.docker.example .env.docker
+        chmod 600 .env.docker 2>/dev/null || true
         echo "    Created .env.docker from template."
         echo ""
         echo "[!] IMPORTANT: Edit .env.docker and configure:"
@@ -29,6 +30,9 @@ if [ ! -f ".env.docker" ]; then
         exit 1
     fi
 fi
+
+# Ensure .env.docker has secure permissions
+chmod 600 .env.docker 2>/dev/null || true
 
 # Load .env.docker safely
 set -a
@@ -46,14 +50,22 @@ if [ -z "${HF_TOKEN:-}" ]; then
     echo ""
 
     if [ -n "$INPUT_HF_TOKEN" ]; then
-        # Write/update .env.docker
-        if grep -q '^HF_TOKEN=' .env.docker; then
-            sed -i "s/^HF_TOKEN=.*/HF_TOKEN=${INPUT_HF_TOKEN}/" .env.docker
+        read -r -p "Save token to .env.docker for future runs? (Y/n): " SAVE_TOKEN
+        SAVE_TOKEN="${SAVE_TOKEN:-Y}"
+        
+        if [[ "$SAVE_TOKEN" =~ ^[Yy]$ ]] || [ -z "$SAVE_TOKEN" ]; then
+            # Write/update .env.docker
+            if grep -q '^HF_TOKEN=' .env.docker; then
+                sed -i "s/^HF_TOKEN=.*/HF_TOKEN=${INPUT_HF_TOKEN}/" .env.docker
+            else
+                echo "HF_TOKEN=${INPUT_HF_TOKEN}" >> .env.docker
+            fi
+            chmod 600 .env.docker 2>/dev/null || true
+            echo "[+] Saved HF_TOKEN to .env.docker"
         else
-            echo "HF_TOKEN=${INPUT_HF_TOKEN}" >> .env.docker
+            echo "[*] Token will be used for this session only (not saved)"
         fi
         export HF_TOKEN="$INPUT_HF_TOKEN"
-        echo "[+] Saved HF_TOKEN to .env.docker"
     else
         echo "[!] Continuing without HF_TOKEN. Gated models may fail to download."
     fi
@@ -141,6 +153,10 @@ echo ""
 echo "  App URL:     http://localhost:8521"
 echo "  vLLM API:    http://localhost:8000/v1"
 echo ""
+echo "  Self-test commands:"
+echo "    curl -s http://localhost:8000/v1/models | jq '.data | length'"
+echo "    curl -s http://localhost:8521/api/status | jq"
+echo ""
 echo "  Useful commands:"
 echo "    View app logs:     docker logs -f simpleaide-app"
 echo "    View vLLM logs:    docker logs -f simpleaide-vllm"
@@ -153,6 +169,8 @@ echo ""
 echo "  Troubleshooting:"
 echo "    - If model download fails with 401/403: Set HF_TOKEN and ensure"
 echo "      you've accepted the model license on huggingface.co"
-echo "    - If you see CUDA capability mismatch: The vLLM image may not"
-echo "      support your GPU. Try Ollama backend or a pinned vLLM version."
+echo "    - If you see CUDA capability mismatch: Change VLLM_IMAGE in"
+echo "      .env.docker to a build that supports your GPU, or use Ollama."
+echo "    - If OOM errors: Lower VLLM_GPU_MEMORY_UTILIZATION (default 0.75)"
+echo "      or VLLM_MAX_MODEL_LEN in .env.docker"
 echo ""

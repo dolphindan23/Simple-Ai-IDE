@@ -26,6 +26,7 @@ if [ ! -f ".env.docker" ]; then
     echo "    Creating from template..."
     if [ -f ".env.docker.example" ]; then
         cp .env.docker.example .env.docker
+        chmod 600 .env.docker 2>/dev/null || true
         echo "    Created .env.docker from template."
         echo ""
         echo "[!] IMPORTANT: Edit .env.docker and set SESSION_SECRET"
@@ -38,6 +39,9 @@ if [ ! -f ".env.docker" ]; then
     fi
 fi
 
+# Ensure .env.docker has secure permissions
+chmod 600 .env.docker 2>/dev/null || true
+
 # Check for Docker
 if ! command -v docker &> /dev/null; then
     echo "[!] Docker is not installed. Please install Docker first."
@@ -49,6 +53,23 @@ if ! docker compose version &> /dev/null; then
     echo "[!] Docker Compose v2 is not available."
     echo "    Please install Docker Compose v2 or update Docker."
     exit 1
+fi
+
+# Check for port conflict with native Ollama
+if command -v ss &> /dev/null; then
+    if ss -ltnp 2>/dev/null | grep -q ':11434 '; then
+        echo "[!] Port 11434 is already in use (likely native Ollama)."
+        echo "    Docker Ollama will use host port $OLLAMA_HOST_PORT instead."
+        echo "    To use Docker on 11434, stop native Ollama: systemctl stop ollama"
+        echo ""
+    fi
+elif command -v netstat &> /dev/null; then
+    if netstat -tlnp 2>/dev/null | grep -q ':11434 '; then
+        echo "[!] Port 11434 is already in use (likely native Ollama)."
+        echo "    Docker Ollama will use host port $OLLAMA_HOST_PORT instead."
+        echo "    To use Docker on 11434, stop native Ollama: systemctl stop ollama"
+        echo ""
+    fi
 fi
 
 # Check for NVIDIA GPU (optional warning)
@@ -91,6 +112,28 @@ for i in {1..10}; do
     sleep 2
 done
 
+# Check Ollama health
+echo ""
+echo "[*] Checking Ollama health..."
+for i in {1..10}; do
+    if curl -s "http://localhost:$OLLAMA_HOST_PORT/api/version" > /dev/null 2>&1; then
+        echo "    Ollama is healthy!"
+        OLLAMA_VERSION=$(curl -s "http://localhost:$OLLAMA_HOST_PORT/api/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+        [ -n "$OLLAMA_VERSION" ] && echo "    Version: $OLLAMA_VERSION"
+        break
+    fi
+    if [ $i -eq 10 ]; then
+        echo "    [!] Ollama health check timed out. Check logs with:"
+        echo "        docker logs -f simpleaide-ollama"
+    fi
+    sleep 2
+done
+
+# Show available models
+echo ""
+echo "[*] Available Ollama models:"
+curl -s "http://localhost:$OLLAMA_HOST_PORT/api/tags" 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 || echo "    (No models loaded yet)"
+
 echo ""
 echo "=========================================="
 echo "  Deployment Complete!"
@@ -98,6 +141,10 @@ echo "=========================================="
 echo ""
 echo "  App URL:     http://localhost:8521"
 echo "  Ollama API:  http://localhost:$OLLAMA_HOST_PORT"
+echo ""
+echo "  Self-test commands:"
+echo "    curl -s http://localhost:$OLLAMA_HOST_PORT/api/tags | jq '.models | length'"
+echo "    curl -s http://localhost:8521/api/status | jq"
 echo ""
 echo "  Note: The app connects to Ollama internally via http://ollama:11434"
 echo "        Host port $OLLAMA_HOST_PORT is for external/debugging access."
