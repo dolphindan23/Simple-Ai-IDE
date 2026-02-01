@@ -132,7 +132,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
             className="h-7 px-2 text-xs font-medium justify-start gap-1.5 w-full"
             data-testid="button-project-selector"
           >
-            <FolderKanban className="h-3.5 w-3.5 text-muted-foreground" />
+            <img src="/folder-icon.png" alt="" className="h-3.5 w-3.5 rounded-sm" />
             <span className="truncate flex-1 text-left" data-testid="text-active-project-name">
               {activeProject ? activeProject.name : "No Project"}
             </span>
