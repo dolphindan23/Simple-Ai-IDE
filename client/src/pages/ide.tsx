@@ -729,9 +729,7 @@ export default function IDEPage() {
       <header className="h-7 flex items-center justify-between px-2 border-b border-border bg-card">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded bg-primary flex items-center justify-center">
-              <FolderTree className="h-2.5 w-2.5 text-primary-foreground" />
-            </div>
+            <img src="/icon.png" alt="SimpleAide" className="w-4 h-4 rounded" />
             <span className="font-semibold text-[10px]">SimpleAide</span>
             {isDirty && <span className="text-[9px] text-muted-foreground">(unsaved)</span>}
           </div>
