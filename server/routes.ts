@@ -482,6 +482,83 @@ export async function registerRoutes(
     }
   });
 
+  // Duplicate a project
+  app.post("/api/projects/:id/duplicate", (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const { name } = req.body;
+      
+      // Validate project ID
+      if (!projectId || projectId.includes("..") || projectId.includes("/") || projectId.includes("\\")) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const sourcePath = path.resolve(PROJECTS_DIR, projectId);
+      
+      // Security check
+      const relativePath = path.relative(PROJECTS_DIR, sourcePath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Invalid project path" });
+      }
+      
+      if (!fs.existsSync(sourcePath)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // Load source project metadata
+      const sourceMetaPath = path.join(sourcePath, ".simpleaide", "project.json");
+      let sourceName = projectId;
+      if (fs.existsSync(sourceMetaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(sourceMetaPath, "utf-8"));
+          sourceName = meta.name || projectId;
+        } catch {}
+      }
+      
+      // Generate new project name and ID
+      const newName = name || `${sourceName} (Copy)`;
+      const newProjectId = newName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 50) + "-" + Date.now().toString(36);
+      
+      const destPath = path.join(PROJECTS_DIR, newProjectId);
+      
+      // Copy directory recursively
+      const copyDir = (src: string, dest: string) => {
+        fs.mkdirSync(dest, { recursive: true });
+        const entries = fs.readdirSync(src, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(src, entry.name);
+          const destPath = path.join(dest, entry.name);
+          if (entry.isDirectory()) {
+            copyDir(srcPath, destPath);
+          } else {
+            fs.copyFileSync(srcPath, destPath);
+          }
+        }
+      };
+      
+      copyDir(sourcePath, destPath);
+      
+      // Update the metadata for the new project
+      const newProject: Project = {
+        id: newProjectId,
+        name: newName,
+        path: destPath,
+        createdAt: new Date().toISOString(),
+        lastOpenedAt: new Date().toISOString(),
+      };
+      
+      saveProjectMetadata(newProject);
+      
+      res.json(newProject);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ============ WORKSPACE ROUTES ============
 
   // List workspaces for a project

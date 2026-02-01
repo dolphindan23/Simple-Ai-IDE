@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X, FolderKanban, Trash2, AlertTriangle } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X, FolderKanban, Trash2, AlertTriangle, Copy, FolderOpen, Check } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { Settings as SettingsType } from "@shared/schema";
@@ -26,18 +28,27 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
 
   const { data: savedSettings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
     enabled: open,
   });
 
-  const { data: activeProject } = useQuery<{ id: string; name: string } | null>({
+  const { data: activeProjectData } = useQuery<{ project: { id: string; name: string } | null }>({
     queryKey: ["/api/projects/active"],
     enabled: open,
   });
+  const activeProject = activeProjectData?.project ?? null;
+
+  const { data: projectsData } = useQuery<{ projects: Array<{ id: string; name: string; createdAt?: string }>; activeProjectId: string | null }>({
+    queryKey: ["/api/projects"],
+    enabled: open,
+  });
+  const allProjects = projectsData?.projects ?? [];
 
   const deleteProjectMutation = useMutation({
     mutationFn: async (projectId: string) => {
@@ -48,7 +59,51 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/projects/active"] });
       toast({ title: "Project deleted", description: "The project has been permanently removed." });
       setShowDeleteConfirm(false);
-      setDeleteConfirmText("");
+      setDeleteConfirmed(false);
+      setProjectToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const duplicateProjectMutation = useMutation({
+    mutationFn: async ({ projectId, name }: { projectId: string; name?: string }) => {
+      return apiRequest("POST", `/api/projects/${projectId}/duplicate`, { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Project duplicated", description: "A copy of the project has been created." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const activateProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      return apiRequest("POST", `/api/projects/${projectId}/activate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/active"] });
+      toast({ title: "Project opened", description: "Switched to the selected project." });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (name: string) => {
+      return apiRequest("POST", "/api/projects", { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/active"] });
+      toast({ title: "Project created", description: "Your new project is ready." });
+      setShowCreateProject(false);
+      setNewProjectName("");
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -510,45 +565,89 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           <TabsContent value="project" className="space-y-4 mt-4" data-testid="panel-project">
             <div className="space-y-4">
-              {activeProject ? (
-                <>
-                  <div className="p-3 rounded-md bg-muted/50">
-                    <Label className="text-sm">Current Project</Label>
-                    <p className="text-lg font-medium mt-1">{activeProject.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono mt-1">{activeProject.id}</p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">All Projects</Label>
+                <Button 
+                  size="sm" 
+                  onClick={() => {
+                    setNewProjectName("");
+                    setShowCreateProject(true);
+                  }}
+                  data-testid="button-new-project"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  New Project
+                </Button>
+              </div>
 
-                  <div className="border border-destructive/30 rounded-md p-4 space-y-3 bg-destructive/5">
-                    <div className="flex items-center gap-2 text-destructive">
-                      <AlertTriangle className="w-5 h-5" />
-                      <Label className="text-destructive font-semibold">Danger Zone</Label>
+              <ScrollArea className="h-[280px] rounded-md border">
+                <div className="p-2 space-y-1">
+                  {allProjects && allProjects.length > 0 ? (
+                    allProjects.map((project) => {
+                      const isActive = activeProject?.id === project.id;
+                      return (
+                        <div
+                          key={project.id}
+                          className={`flex items-center gap-2 p-2 rounded-md group ${isActive ? 'bg-primary/10 border border-primary/30' : 'hover-elevate'}`}
+                          data-testid={`project-item-${project.id}`}
+                        >
+                          <FolderKanban className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium truncate">{project.name}</span>
+                              {isActive && (
+                                <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">Active</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground font-mono truncate">{project.id}</p>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!isActive && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => activateProjectMutation.mutate(project.id)}
+                                disabled={activateProjectMutation.isPending}
+                                data-testid={`button-open-${project.id}`}
+                              >
+                                <FolderOpen className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => duplicateProjectMutation.mutate({ projectId: project.id })}
+                              disabled={duplicateProjectMutation.isPending}
+                              data-testid={`button-copy-${project.id}`}
+                            >
+                              <Copy className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive"
+                              onClick={() => {
+                                setProjectToDelete({ id: project.id, name: project.name });
+                                setDeleteConfirmed(false);
+                                setShowDeleteConfirm(true);
+                              }}
+                              data-testid={`button-delete-${project.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FolderKanban className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p>No projects yet</p>
+                      <p className="text-sm">Create your first project to get started</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Deleting a project permanently removes all files, workspaces, and settings. This action cannot be undone.
-                    </p>
-                    <Button 
-                      variant="destructive" 
-                      onClick={() => {
-                        if (activeProject) {
-                          setProjectToDelete({ id: activeProject.id, name: activeProject.name });
-                          setDeleteConfirmText("");
-                          setShowDeleteConfirm(true);
-                        }
-                      }}
-                      data-testid="button-delete-project"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Project
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FolderKanban className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No project selected</p>
-                  <p className="text-sm">Select a project to manage its settings</p>
+                  )}
                 </div>
-              )}
+              </ScrollArea>
             </div>
           </TabsContent>
         </Tabs>
@@ -556,7 +655,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         <AlertDialog open={showDeleteConfirm} onOpenChange={(open) => {
           setShowDeleteConfirm(open);
           if (!open) {
-            setDeleteConfirmText("");
+            setDeleteConfirmed(false);
             setProjectToDelete(null);
           }
         }}>
@@ -571,15 +670,17 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   <p>
                     This will permanently delete <strong>{projectToDelete?.name}</strong> and all its contents including files, workspaces, and settings.
                   </p>
-                  <p className="font-medium">
-                    Type <span className="font-mono text-foreground bg-muted px-1 rounded">{projectToDelete?.name}</span> to confirm:
-                  </p>
-                  <Input
-                    value={deleteConfirmText}
-                    onChange={(e) => setDeleteConfirmText(e.target.value)}
-                    placeholder="Type project name to confirm"
-                    data-testid="input-delete-confirm"
-                  />
+                  <div className="flex items-start gap-2 p-3 bg-destructive/10 rounded-md border border-destructive/20">
+                    <Checkbox
+                      id="confirm-delete"
+                      checked={deleteConfirmed}
+                      onCheckedChange={(checked) => setDeleteConfirmed(checked === true)}
+                      data-testid="checkbox-delete-confirm"
+                    />
+                    <label htmlFor="confirm-delete" className="text-sm cursor-pointer leading-tight">
+                      I understand this action is permanent and cannot be undone
+                    </label>
+                  </div>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -589,11 +690,50 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => projectToDelete && deleteProjectMutation.mutate(projectToDelete.id)}
-                disabled={!projectToDelete || deleteConfirmText !== projectToDelete.name || deleteProjectMutation.isPending}
+                disabled={!projectToDelete || !deleteConfirmed || deleteProjectMutation.isPending}
                 className="bg-destructive text-destructive-foreground"
                 data-testid="button-confirm-delete"
               >
                 {deleteProjectMutation.isPending ? "Deleting..." : "Delete Project"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showCreateProject} onOpenChange={(open) => {
+          setShowCreateProject(open);
+          if (!open) {
+            setNewProjectName("");
+          }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <FolderKanban className="w-5 h-5" />
+                Create New Project
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  <p>Enter a name for your new project.</p>
+                  <Input
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder="My Project"
+                    data-testid="input-new-project-name"
+                  />
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-create">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => newProjectName.trim() && createProjectMutation.mutate(newProjectName.trim())}
+                disabled={!newProjectName.trim() || createProjectMutation.isPending}
+                data-testid="button-confirm-create"
+              >
+                {createProjectMutation.isPending ? "Creating..." : "Create Project"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
