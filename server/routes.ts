@@ -989,9 +989,9 @@ export async function registerRoutes(
   // File system routes
   app.get("/api/files", (req: Request, res: Response) => {
     const rootDir = getProjectFilesRoot();
-    // Return empty tree when no project is active - never expose app source
+    // Return empty array when no project is active - never expose app source
     if (!rootDir) {
-      return res.json({ name: "root", type: "folder", children: [] });
+      return res.json([]);
     }
     const tree = getFileTree(rootDir);
     res.json(tree);
