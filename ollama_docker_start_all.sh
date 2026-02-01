@@ -6,6 +6,7 @@ cd "$SCRIPT_DIR"
 
 echo "=========================================="
 echo "  SimpleAide Docker GPU Deployment"
+echo "  Backend: Ollama"
 echo "=========================================="
 echo ""
 
@@ -51,10 +52,10 @@ else
 fi
 echo ""
 
-# Build and start
-echo "[*] Building and starting containers..."
+# Build and start with Ollama profile
+echo "[*] Building and starting containers (Ollama profile)..."
 echo ""
-docker compose -f docker-compose.gpu.yml up -d --build
+docker compose -f docker-compose.gpu.yml --profile ollama up -d --build
 
 echo ""
 echo "[*] Waiting for services to be healthy..."
@@ -63,7 +64,7 @@ sleep 5
 # Show status
 echo ""
 echo "[*] Container status:"
-docker compose -f docker-compose.gpu.yml ps
+docker compose -f docker-compose.gpu.yml --profile ollama ps
 echo ""
 
 # Check if app is responding
@@ -93,5 +94,5 @@ echo "    View app logs:     docker logs -f simpleaide-app"
 echo "    View Ollama logs:  docker logs -f simpleaide-ollama"
 echo "    Pull more models:  docker exec -it simpleaide-ollama ollama pull <model>"
 echo "    List models:       docker exec -it simpleaide-ollama ollama list"
-echo "    Stop all:          ./docker_stop_all.sh"
+echo "    Stop all:          ./ollama_docker_stop_all.sh"
 echo ""

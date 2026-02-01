@@ -298,16 +298,28 @@ For multiple Ollama instances (one per GPU), duplicate the `ollama` service with
 
 #### Stop the Stack
 
+**Ollama Profile:**
 ```bash
-# Option A: Use the convenience script
-./docker_stop_all.sh
+# Use the convenience script
+./ollama_docker_stop_all.sh
 
-# Option B: Manual command
-docker compose -f docker-compose.gpu.yml down
+# Or manual command
+docker compose -f docker-compose.gpu.yml --profile ollama down
 
 # To also remove volumes (data will be lost):
-./docker_stop_all.sh --clean
-# or: docker compose -f docker-compose.gpu.yml down -v
+./ollama_docker_stop_all.sh --clean
+```
+
+**vLLM Profile:**
+```bash
+# Use the convenience script
+./vllm_docker_stop_all.sh
+
+# Or manual command
+docker compose -f docker-compose.gpu.yml --profile vllm down
+
+# To also remove volumes (data will be lost):
+./vllm_docker_stop_all.sh --clean
 ```
 
 ### docker-compose.gpu.yml Reference
