@@ -2,12 +2,24 @@
 set -e
 
 BACKEND="${LLM_BACKEND:-ollama}"
-BASE="${LLM_BASE_URL:-http://ollama:11434}"
+
+# Auto-resolve base URL if not explicitly set
+if [ -z "$LLM_BASE_URL" ]; then
+  if [ "$BACKEND" = "vllm" ]; then
+    BASE="http://vllm:8000/v1"
+  else
+    BASE="http://ollama:11434"
+  fi
+else
+  BASE="$LLM_BASE_URL"
+fi
 
 echo "[entrypoint] LLM_BACKEND=$BACKEND"
 echo "[entrypoint] Waiting for LLM at: $BASE"
 
 # Pick a probe endpoint based on backend type
+# vLLM: /v1/models (base URL should include /v1)
+# Ollama: /api/version
 if [ "$BACKEND" = "vllm" ]; then
   PROBE="${BASE%/}/models"
 else

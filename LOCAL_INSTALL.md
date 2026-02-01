@@ -211,6 +211,49 @@ docker compose -f docker-compose.gpu.yml --profile vllm up -d --build
 - `codellama/CodeLlama-7b-Instruct-hf` - Code-focused
 - `mistralai/Mistral-7B-Instruct-v0.3` - Fast general purpose
 
+**Model Naming Note:** vLLM reports the model ID via `/v1/models` which must match `LLM_MODEL`. By default, vLLM uses the HuggingFace repo ID (e.g., `Qwen/Qwen2.5-7B-Instruct`). For stable/friendly names, add `--served-model-name my-model` to the vLLM command in `docker-compose.gpu.yml` and set `LLM_MODEL=my-model`.
+
+#### Verify Deployment (Smoke Tests)
+
+After starting either profile, run these commands to verify:
+
+**Ollama Profile:**
+```bash
+# Check Ollama is responding
+curl -s http://localhost:11434/api/version | jq .
+
+# List available models
+curl -s http://localhost:11434/api/tags | jq '.models[].name'
+
+# Check app is responding
+curl -s http://localhost:8521/api/status | jq .
+
+# Test Ollama chat completion
+curl -s http://localhost:11434/api/chat -d '{
+  "model": "qwen2.5:7b",
+  "messages": [{"role": "user", "content": "Say hello in 5 words."}],
+  "stream": false
+}' | jq -r '.message.content'
+```
+
+**vLLM Profile:**
+```bash
+# Check vLLM is responding (base URL includes /v1)
+curl -s http://localhost:8000/v1/models | jq '.data[].id'
+
+# Check app is responding
+curl -s http://localhost:8521/api/status | jq .
+
+# Test vLLM chat completion
+curl -s http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "messages": [{"role":"user","content":"Say hello in 5 words."}],
+    "temperature": 0.2
+  }' | jq -r '.choices[0].message.content'
+```
+
 3. **Check status:**
 ```bash
 docker compose -f docker-compose.gpu.yml ps
