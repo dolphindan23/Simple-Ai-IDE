@@ -27,6 +27,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const { data: savedSettings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
@@ -527,7 +528,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     </p>
                     <Button 
                       variant="destructive" 
-                      onClick={() => setShowDeleteConfirm(true)}
+                      onClick={() => {
+                        if (activeProject) {
+                          setProjectToDelete({ id: activeProject.id, name: activeProject.name });
+                          setDeleteConfirmText("");
+                          setShowDeleteConfirm(true);
+                        }
+                      }}
                       data-testid="button-delete-project"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
@@ -546,36 +553,44 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           </TabsContent>
         </Tabs>
 
-        <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialog open={showDeleteConfirm} onOpenChange={(open) => {
+          setShowDeleteConfirm(open);
+          if (!open) {
+            setDeleteConfirmText("");
+            setProjectToDelete(null);
+          }
+        }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
                 Delete Project?
               </AlertDialogTitle>
-              <AlertDialogDescription className="space-y-3">
-                <p>
-                  This will permanently delete <strong>{activeProject?.name}</strong> and all its contents including files, workspaces, and settings.
-                </p>
-                <p className="font-medium">
-                  Type <span className="font-mono text-foreground bg-muted px-1 rounded">{activeProject?.name}</span> to confirm:
-                </p>
-                <Input
-                  value={deleteConfirmText}
-                  onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder="Type project name to confirm"
-                  data-testid="input-delete-confirm"
-                />
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  <p>
+                    This will permanently delete <strong>{projectToDelete?.name}</strong> and all its contents including files, workspaces, and settings.
+                  </p>
+                  <p className="font-medium">
+                    Type <span className="font-mono text-foreground bg-muted px-1 rounded">{projectToDelete?.name}</span> to confirm:
+                  </p>
+                  <Input
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type project name to confirm"
+                    data-testid="input-delete-confirm"
+                  />
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setDeleteConfirmText("")} data-testid="button-cancel-delete">
+              <AlertDialogCancel data-testid="button-cancel-delete">
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => activeProject && deleteProjectMutation.mutate(activeProject.id)}
-                disabled={deleteConfirmText !== activeProject?.name || deleteProjectMutation.isPending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => projectToDelete && deleteProjectMutation.mutate(projectToDelete.id)}
+                disabled={!projectToDelete || deleteConfirmText !== projectToDelete.name || deleteProjectMutation.isPending}
+                className="bg-destructive text-destructive-foreground"
                 data-testid="button-confirm-delete"
               >
                 {deleteProjectMutation.isPending ? "Deleting..." : "Delete Project"}
