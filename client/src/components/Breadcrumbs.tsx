@@ -24,7 +24,7 @@ export function Breadcrumbs({ path, onNavigate }: BreadcrumbsProps) {
         onClick={() => onNavigate?.("")}
         data-testid="breadcrumb-root"
       >
-        <Folder className="h-3 w-3" />
+        <img src="/folder-icon.png" alt="" className="h-3 w-3 rounded-sm" />
         root
       </button>
 
@@ -52,7 +52,7 @@ export function Breadcrumbs({ path, onNavigate }: BreadcrumbsProps) {
             className="px-1 py-0.5 font-medium text-foreground flex items-center gap-1"
             data-testid="breadcrumb-file"
           >
-            <File className="h-3 w-3" />
+            <img src="/file-icon.png" alt="" className="h-3 w-3 rounded-sm" />
             {fileName}
           </span>
         </div>

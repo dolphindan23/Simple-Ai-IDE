@@ -359,7 +359,7 @@ export function AITeamPanel({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              <img src="/folder-icon.png" alt="" className="h-3.5 w-3.5 rounded-sm" />
               <span className="text-xs font-medium text-muted-foreground">
                 Context Files {contextFiles.length > 0 && `(${contextFiles.length})`}
               </span>
@@ -397,7 +397,7 @@ export function AITeamPanel({
                         className="group flex items-center gap-1 px-2 py-0.5 h-6 text-xs font-normal cursor-default"
                         data-testid={`badge-context-file-${fileName}`}
                       >
-                        <File className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <img src="/file-icon.png" alt="" className="h-3 w-3 shrink-0 rounded-sm" />
                         <span className="truncate max-w-[100px]">{fileName}</span>
                         {f.pinned && (
                           <Pin className="h-2.5 w-2.5 text-primary shrink-0" />

@@ -494,7 +494,7 @@ function CreateTemplateModal({
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
-                <File className="h-3.5 w-3.5" />
+                <img src="/file-icon.png" alt="" className="h-3.5 w-3.5 rounded-sm" />
                 Files to Include
               </Label>
               <div className="flex gap-2">
@@ -514,7 +514,7 @@ function CreateTemplateModal({
                 <div className="space-y-1">
                   {formData.files.map(file => (
                     <div key={file} className="flex items-center gap-2 text-xs text-muted-foreground group">
-                      <File className="h-3 w-3" />
+                      <img src="/file-icon.png" alt="" className="h-3 w-3 rounded-sm" />
                       <span className="font-mono flex-1 truncate">{file}</span>
                       <X
                         className="h-3 w-3 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"

@@ -95,9 +95,9 @@ export function CommandPalette({
                     data-testid={`cmd-file-${file.path}`}
                   >
                     {file.type === "directory" ? (
-                      <Folder className="mr-2 h-4 w-4 text-amber-400" />
+                      <img src="/folder-icon.png" alt="" className="mr-2 h-4 w-4 rounded-sm" />
                     ) : (
-                      <File className="mr-2 h-4 w-4 text-muted-foreground" />
+                      <img src="/file-icon.png" alt="" className="mr-2 h-4 w-4 rounded-sm" />
                     )}
                     <span className="flex-1 truncate">{file.name}</span>
                     <span className="text-xs text-muted-foreground truncate max-w-32">{file.path}</span>

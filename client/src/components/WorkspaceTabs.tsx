@@ -400,7 +400,7 @@ export function WorkspaceTabs({
                     {projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center gap-2">
-                          <Folder className="h-3.5 w-3.5" />
+                          <img src="/folder-icon.png" alt="" className="h-3.5 w-3.5 rounded-sm" />
                           {project.name}
                         </div>
                       </SelectItem>
