@@ -30,6 +30,35 @@ if [ ! -f ".env.docker" ]; then
     fi
 fi
 
+# Load .env.docker safely
+set -a
+source .env.docker 2>/dev/null || true
+set +a
+
+# Prompt for HuggingFace token if not set
+if [ -z "${HF_TOKEN:-}" ]; then
+    echo ""
+    echo "[!] HuggingFace token not set (HF_TOKEN)."
+    echo "    Some models are gated and require authentication to download."
+    echo "    Get a token: https://huggingface.co/settings/tokens (Read access)"
+    echo ""
+    read -r -s -p "Enter HF_TOKEN (leave blank to skip): " INPUT_HF_TOKEN
+    echo ""
+
+    if [ -n "$INPUT_HF_TOKEN" ]; then
+        # Write/update .env.docker
+        if grep -q '^HF_TOKEN=' .env.docker; then
+            sed -i "s/^HF_TOKEN=.*/HF_TOKEN=${INPUT_HF_TOKEN}/" .env.docker
+        else
+            echo "HF_TOKEN=${INPUT_HF_TOKEN}" >> .env.docker
+        fi
+        export HF_TOKEN="$INPUT_HF_TOKEN"
+        echo "[+] Saved HF_TOKEN to .env.docker"
+    else
+        echo "[!] Continuing without HF_TOKEN. Gated models may fail to download."
+    fi
+fi
+
 # Check for Docker
 if ! command -v docker &> /dev/null; then
     echo "[!] Docker is not installed. Please install Docker first."
@@ -120,4 +149,10 @@ echo "    Stop all:          ./vllm_docker_stop_all.sh"
 echo ""
 echo "  Note: vLLM uses HuggingFace model IDs. To change models,"
 echo "        edit VLLM_MODEL in .env.docker and restart."
+echo ""
+echo "  Troubleshooting:"
+echo "    - If model download fails with 401/403: Set HF_TOKEN and ensure"
+echo "      you've accepted the model license on huggingface.co"
+echo "    - If you see CUDA capability mismatch: The vLLM image may not"
+echo "      support your GPU. Try Ollama backend or a pinned vLLM version."
 echo ""

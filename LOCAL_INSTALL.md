@@ -470,12 +470,43 @@ To change the host port, edit `OLLAMA_HOST_PORT` in `.env.docker`.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `HF_TOKEN` | HuggingFace access token (for gated models) | (not set) |
 | `VLLM_MODEL` | HuggingFace model ID | `Qwen/Qwen2.5-7B-Instruct` |
 | `VLLM_DTYPE` | Inference data type | `float16` |
 | `VLLM_MAX_MODEL_LEN` | Maximum context length | `8192` |
 | `OPENAI_API_KEY` | API key for remote OpenAI-compat servers | (not set) |
 | `OPENAI_ORG_ID` | OpenAI organization ID | (not set) |
 | `OPENAI_PROJECT_ID` | OpenAI project ID | (not set) |
+
+#### HuggingFace Token (for Gated Models)
+
+Many popular models (Llama, Mistral, Gemma, etc.) are "gated" on HuggingFace and require authentication to download.
+
+**To get a token:**
+1. Create an account at [huggingface.co](https://huggingface.co)
+2. Go to [Settings > Access Tokens](https://huggingface.co/settings/tokens)
+3. Create a token with **Read** access
+4. Accept the model license on the model's HuggingFace page
+
+**To use the token:**
+- Add `HF_TOKEN=hf_xxxxx` to `.env.docker`, OR
+- Run `./vllm_docker_start_all.sh` and it will prompt you (input is hidden)
+
+**Never commit `.env.docker` to version control.**
+
+#### vLLM CUDA Compatibility
+
+vLLM requires a CUDA/PyTorch build that supports your GPU's compute capability.
+
+If you see errors like:
+```
+CUDA capability mismatch: supported (8.0)-(12.0), found 12.1
+```
+
+This means the vLLM Docker image doesn't support your GPU architecture yet. Options:
+- **Use Ollama backend instead** (more hardware-compatible)
+- **Pin to a specific vLLM image** that matches your CUDA stack
+- **Wait for vLLM updates** that support newer compute capabilities
 
 #### Multi-Provider Configuration
 

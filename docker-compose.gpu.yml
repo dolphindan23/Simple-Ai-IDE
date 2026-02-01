@@ -80,6 +80,8 @@ services:
       - "8000:8000"
     environment:
       - HF_HOME=/root/.cache/huggingface
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - vllm_hf_cache:/root/.cache/huggingface
