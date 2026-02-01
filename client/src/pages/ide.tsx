@@ -1179,7 +1179,7 @@ export default function IDEPage() {
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-                        <FolderTree className="h-16 w-16 opacity-20 mb-4" />
+                        <img src="/folder-icon.png" alt="" className="h-20 w-20 opacity-40 mb-4 rounded-lg" />
                         <p className="text-sm">Select a file to edit</p>
                         <p className="text-xs opacity-60 mt-1">
                           Or use the AI Team to generate code
