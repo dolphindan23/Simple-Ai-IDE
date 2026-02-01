@@ -8,6 +8,14 @@ SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-
 - JetBrains Mono font for code
 - Diff-first workflow (agents propose changes, users apply)
 
+## Recent Changes (February 2026)
+- **AI Team Workflow Fixes**: Comprehensive improvements to task runner reliability:
+  - Project detection module (`server/projectDetect.ts`) detects Node vs Python projects from package.json, pyproject.toml, requirements.txt
+  - Test mode is now language-aware: runs npm/pnpm/yarn test for Node projects, pytest/unittest for Python projects
+  - Implement/Review modes blocked when LLM unavailable with clear error artifacts instead of invalid stub diffs
+  - Non-code request detection routes content requests (math questions, copywriting) to content generation
+  - Active project validation for Implement/Test/Review modes with security-hardened path validation
+
 ## Recent Changes (January 2026)
 - **Parallel Workspaces v1**: Multi-workspace system using git worktrees for file isolation. Includes WorkspaceSelector dropdown in IDE header, HandoffsInbox sheet for cross-workspace communication with handoff types (task/patch/decision/question/link/artifact/api_change/blocker/fyi), and workspace-scoped file operations. API: GET/POST /api/projects/:projectId/workspaces, workspace-scoped file routes /api/ws/:workspaceId/files/*.
 - **Git Repo Import v1**: Import existing repositories with multi-step wizard UI, PAT authentication via GIT_ASKPASS, stack detection (Node/Python/Go/Rust), automatic bootstrap file generation (.simpleaide/project.md, runpolicy.json, immutable.json, capabilities.json), and FTS5 search index building
