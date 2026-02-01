@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X, FolderKanban, Trash2, AlertTriangle, Copy, FolderOpen, Check } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Terminal, Code2, Shield, Bot, Plus, X, FolderKanban, Trash2, AlertTriangle, Copy, FolderOpen, Check, HardDrive } from "lucide-react";
+import { OllamaModelManager } from "./OllamaModelManager";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -157,7 +158,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-5" data-testid="settings-tabs">
+          <TabsList className="grid w-full grid-cols-6" data-testid="settings-tabs">
             <TabsTrigger value="general" className="flex items-center gap-1" data-testid="tab-general">
               <Monitor className="w-4 h-4" />
               General
@@ -177,6 +178,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <TabsTrigger value="project" className="flex items-center gap-1" data-testid="tab-project">
               <FolderKanban className="w-4 h-4" />
               Project
+            </TabsTrigger>
+            <TabsTrigger value="models" className="flex items-center gap-1" data-testid="tab-models">
+              <HardDrive className="w-4 h-4" />
+              Models
             </TabsTrigger>
           </TabsList>
 
@@ -649,6 +654,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
               </ScrollArea>
             </div>
+          </TabsContent>
+
+          <TabsContent value="models" className="mt-4" data-testid="panel-models">
+            <OllamaModelManager />
           </TabsContent>
         </Tabs>
 
