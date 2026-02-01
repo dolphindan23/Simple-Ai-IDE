@@ -452,10 +452,16 @@ export async function registerRoutes(
       }
       
       const projectPath = path.resolve(PROJECTS_DIR, projectId);
+      const projectsDirResolved = path.resolve(PROJECTS_DIR);
       
       // Security check: ensure resolved path is within PROJECTS_DIR
       const relativePath = path.relative(PROJECTS_DIR, projectPath);
       if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return res.status(403).json({ error: "Invalid project path" });
+      }
+      
+      // Additional security: path must start with PROJECTS_DIR
+      if (!projectPath.startsWith(projectsDirResolved + path.sep)) {
         return res.status(403).json({ error: "Invalid project path" });
       }
       
@@ -963,15 +969,30 @@ export async function registerRoutes(
 
   // ============ END WORKSPACE/HANDOFF ROUTES ============
 
-  // Get files for active project (or root if no project)
-  function getProjectFilesRoot(): string {
+  // Get files for active project - returns null if no project active
+  // CRITICAL: Never return process.cwd() to prevent exposing app source files
+  function getProjectFilesRoot(): string | null {
     const activeProjectPath = getActiveProjectPath();
-    return activeProjectPath || process.cwd();
+    if (!activeProjectPath) {
+      return null;
+    }
+    // Extra safety: verify the path is within PROJECTS_DIR
+    const resolved = path.resolve(activeProjectPath);
+    const projectsResolved = path.resolve(PROJECTS_DIR);
+    if (!resolved.startsWith(projectsResolved + path.sep) && resolved !== projectsResolved) {
+      console.error("Security: activeProjectPath is outside PROJECTS_DIR:", activeProjectPath);
+      return null;
+    }
+    return activeProjectPath;
   }
 
   // File system routes
   app.get("/api/files", (req: Request, res: Response) => {
     const rootDir = getProjectFilesRoot();
+    // Return empty tree when no project is active - never expose app source
+    if (!rootDir) {
+      return res.json({ name: "root", type: "folder", children: [] });
+    }
     const tree = getFileTree(rootDir);
     res.json(tree);
   });
@@ -982,7 +1003,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check: ensure the path is within the project directory
@@ -1145,7 +1171,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Content is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check
@@ -1173,7 +1204,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullPath = path.resolve(rootDir, filePath);
     
     // Security check
@@ -1208,7 +1244,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullPath = path.resolve(rootDir, folderPath);
     
     // Security check
@@ -1237,7 +1278,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Both oldPath and newPath are required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullOldPath = path.resolve(rootDir, oldPath);
     const fullNewPath = path.resolve(rootDir, newPath);
     
@@ -1272,7 +1318,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Path is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullPath = path.resolve(rootDir, targetPath);
     
     // Security check
@@ -1312,7 +1363,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Source path is required" });
     }
     
-    const rootDir = path.resolve(getProjectFilesRoot());
+    const projectRoot = getProjectFilesRoot();
+    if (!projectRoot) {
+      return res.status(400).json({ error: "No project is currently active" });
+    }
+    
+    const rootDir = path.resolve(projectRoot);
     const fullSourcePath = path.resolve(rootDir, sourcePath);
     
     // Security check
