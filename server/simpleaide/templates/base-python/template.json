@@ -1,0 +1,38 @@
+{
+  "id": "base-python",
+  "name": "Python FastAPI Base",
+  "version": "1.0.0",
+  "description": "Basic Python project scaffold with FastAPI, uvicorn, and common tooling",
+  "tags": ["python", "fastapi", "backend", "api"],
+  "extends": [],
+  "variables": {
+    "PROJECT_NAME": { "default": "my-api", "description": "Project name" },
+    "PORT": { "default": "8000", "description": "Server port" }
+  },
+  "creates": {
+    "files": [
+      "pyproject.toml",
+      "requirements.txt",
+      "src/main.py",
+      "src/routes/__init__.py",
+      "src/routes/health.py",
+      ".env.example",
+      ".gitignore",
+      "Dockerfile",
+      "docker-compose.yml"
+    ]
+  },
+  "requiresSecrets": [],
+  "capabilitiesPatch": {
+    "services": {
+      "python": { "enabled": true, "via": "native" }
+    }
+  },
+  "postInstall": [
+    { "type": "shell", "cmd": "pip install -r requirements.txt" }
+  ],
+  "guardrails": {
+    "recommendedImmutable": [],
+    "ports": [8000]
+  }
+}

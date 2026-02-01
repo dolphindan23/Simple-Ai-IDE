@@ -1,68 +1,100 @@
-# SimpleAide
+# SimpleAide - AI-Powered Coding Workspace
 
 ## Overview
-
-SimpleAide is an AI-powered code assistant and IDE built as a full-stack TypeScript application. It provides a web-based development environment with integrated AI capabilities for code generation, editing, and assistance through local LLM backends like Ollama.
-
-The application features a Monaco-based code editor, terminal integration, file management, and configurable AI agent backends that can be connected to various LLM providers.
+SimpleAide is an AI-powered coding workspace that integrates an AI-driven multi-agent workflow to streamline development. It provides a minimal yet powerful IDE experience by combining a Monaco-based code editor, a file tree, a terminal, and an AI Team sidebar. The project's core purpose is to leverage AI to enhance developer productivity, accelerate software delivery, and provide a comprehensive environment for planning, implementing, testing, and reviewing code.
 
 ## User Preferences
+- Dark theme by default (IDE-focused design)
+- JetBrains Mono font for code
+- Diff-first workflow (agents propose changes, users apply)
 
-Preferred communication style: Simple, everyday language.
+## Recent Changes (January 2026)
+- **Parallel Workspaces v1**: Multi-workspace system using git worktrees for file isolation. Includes WorkspaceSelector dropdown in IDE header, HandoffsInbox sheet for cross-workspace communication with handoff types (task/patch/decision/question/link/artifact/api_change/blocker/fyi), and workspace-scoped file operations. API: GET/POST /api/projects/:projectId/workspaces, workspace-scoped file routes /api/ws/:workspaceId/files/*.
+- **Git Repo Import v1**: Import existing repositories with multi-step wizard UI, PAT authentication via GIT_ASKPASS, stack detection (Node/Python/Go/Rust), automatic bootstrap file generation (.simpleaide/project.md, runpolicy.json, immutable.json, capabilities.json), and FTS5 search index building
+- **Enhanced Status Strip**: Bloomberg-style status bar with CTX (context files), RUN (agent state), and Saved/Unsaved chips; left/right grouping for workspace vs infrastructure status
+- **Settings Modal AI Tab**: Added 4th tab for AI defaults (action, speed, diff preview, confirm destructive)
+- **Context Manager Drawer**: Visualize/manage AI file context with pin/search/clear functionality
+- **Keyboard Shortcuts Modal**: Displays all keybindings organized by category (General, Editor, Panels, AI)
+- **File Menu Cleanup**: Removed Duplicate, added Settings/Reload Window/Reset Layout/Shortcuts items
+- **Right-click Context Menu**: FileTree nodes support context menu matching hover actions
+- **Breadcrumbs Bar**: Shows current file path above Monaco editor with clickable segments
+- **Theme Support**: Four themes available - light, dark, terminal-noir, and alpha-terminal (cyberpunk with cyan/magenta/acid green neon accents)
+- **Docker GPU Deployment**: Added Dockerfile, docker-compose.gpu.yml, and .env.docker.example for containerized deployment with GPU-enabled Ollama
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React with TypeScript
-- **Build Tool**: Vite for development and production builds
-- **UI Components**: shadcn/ui component library built on Radix UI primitives
-- **Styling**: Tailwind CSS with CSS variables for theming
-- **State Management**: TanStack React Query for server state
-- **Code Editor**: Monaco Editor (@monaco-editor/react) for code editing
-- **Terminal**: xterm.js for integrated terminal functionality
-- **Forms**: React Hook Form with Zod validation (@hookform/resolvers)
+### Frontend (React + TypeScript)
+The frontend delivers a rich interactive development environment with key components like a Workspace Header for navigation, a Monaco Editor for code editing, a File Tree for project navigation, and a Settings System for persistent configuration. It features an Encrypted Secrets Vault for secure storage, an AI Team Panel for task execution, and an AI Agents Panel for managing LLM backends. Other notable features include a Terminal Panel, Shell Panel, Diff Viewer, Database Panel for SQLite management, and a Command Palette for quick access to functionalities. The UI supports dark/light themes and project selection/management.
 
-### Backend Architecture
-- **Runtime**: Node.js 20+ with native fetch support
-- **Framework**: Express.js server
-- **Language**: TypeScript with tsx for development execution
-- **Build Output**: Compiled to CommonJS (dist/index.cjs) for production
+### Project Management System
+Projects are stored in a `projects/` directory, each with isolated workspaces and metadata. An active project is tracked for session persistence, and all file system operations are scoped to the active project's directory. The system includes API endpoints for listing, creating, activating, and deleting projects, with robust security measures against path traversal.
 
-### Data Storage
-- **Primary Database**: PostgreSQL via Drizzle ORM
-- **Local Storage**: better-sqlite3 for local/offline functionality
-- **Schema Location**: shared/schema.ts (shared between client and server)
-- **Migrations**: Managed via drizzle-kit with migrations stored in ./migrations
+### Backend (Express + TypeScript)
+The backend provides API services for file system operations, AI orchestration, settings management, and data persistence. It includes a File System API, AI Orchestration for routing requests to configured agents, and APIs for Secrets Management and Database Management. A Task Runner manages AI task execution and artifact persistence, with an Ollama Integration for LLM backends and a Shell WebSocket Server for PTY-based shell sessions.
 
-### Configuration System
-- **User Settings**: JSON-based configuration stored in .simpleaide/settings.json
-- **Model Catalog**: AI model configurations in .simpleaide/model_catalog.json
-- **Settings Include**: Theme preferences, editor configuration, AI backend settings, integration toggles, and trust/security settings
+### AI Agents System
+The system employs five role-based agents (Planner, Coder, Reviewer, TestFixer, Doc), each configurable with specific LLM backends, models, temperature, and context length. An Orchestrator routes AI requests, supporting a Fast/Accurate Toggle for dynamic model switching.
 
-### Trust & Security System
-- Configurable trust settings for AI-generated patches
-- Auto-fix capabilities with attempt limits
-- File and line count limits per patch
-- Sensitive path protection
-- Git-based patch application system
+### Workflow Engine
+The workflow engine supports Plan, Implement, Test, Review, and Verify task modes. It automates a sequence of Plan → Code → Apply → Test → Fix → Review, including file backups and test-fix retry loops. Workflow run metadata, step details, and artifacts are stored for traceability.
+
+### Code Editing Reliability System
+The code editing pipeline includes several reliability enhancements:
+- **Repo Snapshot**: Captures file tree structure and target file contents for AI context.
+- **Patch Validator**: Validates diffs before application, checking file existence, format, and preventing path traversal.
+- **Enhanced Apply**: Supports standard file modifications, creation, and deletion via `git apply`.
+- **Verify Step**: Runs configured test/build commands post-application.
+- **TestFixer Retry Loop**: Automatically fixes failing tests with a retry mechanism, feeding failure logs to AI and applying generated fixes iteratively.
+
+### Trust Hardening System
+The system includes comprehensive trust hardening features for secure code changes:
+- **Trust Settings**: Configurable limits in `.simpleaide/settings.json` for auto-fix, max attempts, max files/lines per patch, sensitive paths, and a verify allowlist.
+- **Patch Safety Limits**: Blocks patches exceeding configured file and line limits.
+- **Dangerous Change Detection**: Flags file deletions and sensitive path edits, requiring user confirmation.
+- **Confirmation Token System**: Server-generated, time-limited nonce tokens for dangerous changes, requiring re-POST with a valid token for application.
+- **Git Apply Hardening**: Uses `git apply --check` for dry runs and `--whitespace=nowarn`.
+- **Verify Command Allowlist**: Executes only pre-approved commands or package.json scripts.
+- **Enhanced Artifact Saving**: Saves detailed logs and reports for validation, applied files, verification, and blocked dangerous changes.
+- **Settings UI**: Provides a user interface for configuring all safety limits.
+- **Dangerous Change Dialog**: Displays clear warnings and requires explicit user confirmation for critical changes.
+
+### Run Capsules System
+The Run Capsules system provides isolated sandboxes for AI agent runs with comprehensive safety features:
+- **OverlayFS Capsule**: Copy-on-write filesystem overlay for isolated changes (workspace directory sits on top of repo).
+- **Immutable Path Protection**: Configurable paths in `.simpleaide/immutable.json` that require user confirmation before modification.
+- **Secret Scanning**: 14 regex patterns for detecting AWS keys, GitHub tokens, OpenAI keys, Stripe keys, etc. plus entropy-based detection for high-entropy strings.
+- **Git Checkpoints**: Stash-based checkpoints created at run start, enabling rollback to pre-run state.
+- **Approval Token System**: Time-limited (5 minute) tokens for apply/rollback operations.
+- **Pending Confirmation Flow**: Sensitive writes are queued for user approval, run status set to "needs_approval".
+- **Patch Export**: Export all changes as unified diff for review before application.
+- **Lexical Code Indexer**: FTS5-powered full-text search with language detection, chunking, and incremental updates.
+- **Tool Audit Logging**: All tool calls logged with inputs, outputs, and success status.
+- **Database**: SQLite (`capsules.db`) with tables for agent_runs, run_capsules, tool_audit_log, and project_index (FTS5).
+- **API Endpoints**: `/api/projects/:projectId/runs/*` for run management, patch export, apply, rollback, confirmations, and audit logs.
+
+### Real-Time Agent Visibility System
+A real-time agent activity monitoring system provides visibility into AI operations:
+- **Agent Profiles Database**: SQLite tables store agent profiles and run events.
+- **Event Emitter**: In-process pub/sub for real-time event broadcasting, dual-writing to the database and SSE broadcast.
+- **Granular Event Emissions**: Emits detailed events for file operations, tool calls, changeset proposals, and progress tracking.
+- **SSE Streaming Endpoint**: Server-Sent Events for real-time updates with heartbeat and reconnection support.
+- **Agent Roster UI**: Visual agent cards with status indicators, color-coded avatars, and model badges.
+- **Activity Timeline**: Real-time event feed with timestamping, event-type icons, and progress indicators.
+
+### Security
+Security measures include AES-256-GCM encryption for secrets, strict file permissions, path traversal prevention, environment detection (`SIMPLEAIDE_ENV`), and production environment restrictions (read-only database, disabled shell access).
 
 ## External Dependencies
-
-### AI/LLM Integration
-- **Ollama**: Primary local LLM backend (default: http://localhost:11434)
-- **Supported Models**: CodeLlama and other Ollama-compatible models
-- **Backend Configuration**: Multiple AI backends can be configured with different auth types (none, API key, etc.)
-
-### Optional Integrations
-- **Kaggle**: Dataset and notebook integration (configurable)
-- **Hugging Face**: Model and dataset integration (configurable)
-- **NGC (NVIDIA GPU Cloud)**: GPU-accelerated model integration (configurable)
-
-### Database
-- **PostgreSQL**: Required for production deployment (DATABASE_URL environment variable)
-- **Drizzle ORM**: Type-safe database queries and schema management
-
-### Build Requirements
-- **Python 3**: Required for building native modules (better-sqlite3)
-- **C++ Build Tools**: Platform-specific compilers for native dependencies
-- **Git**: Required for patch application in trust hardening system
+- **Ollama**: Local LLM backend.
+- **Monaco Editor**: Code editor.
+- **TanStack Query**: Frontend data fetching and state management.
+- **Tailwind CSS**: Utility-first CSS framework.
+- **shadcn/ui**: UI component library.
+- **Express.js**: Backend web framework.
+- **React**: Frontend JavaScript library.
+- **TypeScript**: For type safety.
+- **Node.js**: JavaScript runtime environment.
+- **SQLite**: Database engine.
+- **Kaggle API**: For Kaggle services.
+- **HuggingFace API**: For HuggingFace services.
+- **NVIDIA NGC API**: For NVIDIA NGC services.

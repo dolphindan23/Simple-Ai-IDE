@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "id": "test-import-PitnxuPv",
+      "name": "test-import",
+      "path": "/home/runner/workspace/projects/test-import-PitnxuPv",
+      "createdAt": "2026-01-30T12:10:26.991Z",
+      "lastOpenedAt": "2026-01-30T12:10:26.991Z",
+      "remote": "https://github.com/expressjs/express.git"
+    }
+  ],
+  "activeProjectId": "test-import-PitnxuPv"
+}
