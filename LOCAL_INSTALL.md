@@ -134,9 +134,11 @@ docker build -t simpleaide .
 docker run -p 8521:8521 -v simpleaide-data:/app/data simpleaide
 ```
 
-### Docker Compose with GPU-Enabled Ollama
+### Docker Compose with GPU-Enabled LLM Backend
 
-For a complete deployment with GPU-accelerated Ollama, use the included `docker-compose.gpu.yml`:
+SimpleAide supports two GPU-accelerated LLM backends via Docker Compose profiles:
+- **Ollama** (default) - Easy model management, pull-and-run workflow
+- **vLLM** - OpenAI-compatible API, faster inference, better for production
 
 #### Prerequisites (NVIDIA GPU Host)
 
@@ -163,25 +165,51 @@ sudo systemctl restart docker
 docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 ```
 
-#### Setup & Run
+#### Option A: Ollama Backend (Recommended for Getting Started)
 
 1. **Create environment file:**
 ```bash
 cp .env.docker.example .env.docker
 
 # Edit .env.docker and set:
-# - SESSION_SECRET (required - generate with: openssl rand -hex 32)
+# - LLM_BACKEND=ollama (default)
 # - OLLAMA_MODEL (default: qwen2.5:7b)
 ```
 
-2. **Start the stack:**
+2. **Start with Ollama profile:**
 ```bash
-# Option A: Use the convenience script
-./docker_start_all.sh
-
-# Option B: Manual command
-docker compose -f docker-compose.gpu.yml up -d --build
+docker compose -f docker-compose.gpu.yml --profile ollama up -d --build
 ```
+
+#### Option B: vLLM Backend (Recommended for Production)
+
+vLLM provides an OpenAI-compatible API with faster inference and better GPU utilization.
+
+1. **Create environment file:**
+```bash
+cp .env.docker.example .env.docker
+
+# Edit .env.docker and set:
+LLM_BACKEND=vllm
+LLM_BASE_URL=http://vllm:8000/v1
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+VLLM_DTYPE=float16
+VLLM_MAX_MODEL_LEN=8192
+```
+
+2. **Start with vLLM profile:**
+```bash
+docker compose -f docker-compose.gpu.yml --profile vllm up -d --build
+```
+
+**Note:** vLLM cold start can take 1-3 minutes as it downloads and loads the model. The app will wait up to 2 minutes for the backend to become available.
+
+**Recommended vLLM Models:**
+- `Qwen/Qwen2.5-7B-Instruct` - Good balance of speed and quality
+- `Qwen/Qwen2.5-14B-Instruct` - Higher quality, needs more VRAM
+- `codellama/CodeLlama-7b-Instruct-hf` - Code-focused
+- `mistralai/Mistral-7B-Instruct-v0.3` - Fast general purpose
 
 3. **Check status:**
 ```bash
@@ -241,26 +269,30 @@ docker compose -f docker-compose.gpu.yml down
 
 ### docker-compose.gpu.yml Reference
 
-The GPU compose file includes:
+The GPU compose file uses Compose profiles to select the LLM backend:
 
-| Service | Description |
-|---------|-------------|
-| `app` | SimpleAide Node.js application on port 8521 |
-| `ollama` | GPU-enabled Ollama server with health checks |
-| `ollama-init` | One-time model puller (pulls OLLAMA_MODEL on startup) |
+| Service | Profile | Description |
+|---------|---------|-------------|
+| `app` | (always) | SimpleAide Node.js application on port 8521 |
+| `ollama` | `ollama` | GPU-enabled Ollama server with health checks |
+| `ollama-init` | `ollama` | One-time model puller (pulls OLLAMA_MODEL on startup) |
+| `vllm` | `vllm` | GPU-enabled vLLM OpenAI-compatible server |
 
 | Volume | Description |
 |--------|-------------|
 | `ollama_data` | Persisted Ollama models and configuration |
-| `simpleaide_config` | Application config and runtime data (.simpleaide directory) |
+| `vllm_hf_cache` | Persisted HuggingFace model cache for vLLM |
+| `simpleaide_data` | Application config and runtime data (.simpleaide directory) |
 | `simpleaide_projects` | User projects |
 
 **Notes:**
-- GPU access uses both `runtime: nvidia` and `deploy.resources.reservations.devices` for maximum compatibility
-- The app exposes a lightweight `/health` endpoint for Docker health checks (no DB/LLM calls)
+- Use `--profile ollama` or `--profile vllm` to select the backend
+- GPU access uses `deploy.resources.reservations.devices` for modern Compose
+- The app includes a wait-for-LLM entrypoint that polls the backend before starting
+- vLLM cold starts can take 1-3 minutes; ensure sufficient VRAM (8GB+ for 7B models)
 - If you get GPU errors, verify with:
 ```bash
-docker run --rm --runtime=nvidia nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 ```
 
 ### Dockerfile Reference
@@ -344,17 +376,36 @@ Configure agent settings (model, temperature, context length) in Settings > AI A
 | `NODE_ENV` | Environment mode | development |
 | `SIMPLEAIDE_ENV` | Override environment detection | (uses NODE_ENV) |
 
+### LLM Backend Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_BACKEND` | Backend type: `ollama` or `vllm` | `ollama` |
+| `LLM_BASE_URL` | LLM server URL | (auto-resolved based on backend) |
+| `LLM_MODEL` | Model name | (auto-resolved based on backend) |
+
 ### Ollama Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Default model name | `codellama` |
+| `OLLAMA_MODEL` | Default model name | `qwen2.5:7b` |
 | `OLLAMA_CONNECT_TIMEOUT_MS` | Connection timeout (ms) | `5000` |
 | `OLLAMA_REQUEST_TIMEOUT_MS` | Request timeout for generation (ms) | `300000` (5 min) |
 | `OLLAMA_RETRY_COUNT` | Number of retry attempts | `1` |
 | `OLLAMA_RETRY_BACKOFF_MS` | Backoff between retries (ms) | `250` |
 | `OLLAMA_PROVIDERS_JSON` | JSON array of providers (see below) | (not set) |
+
+### vLLM / OpenAI-Compatible Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VLLM_MODEL` | HuggingFace model ID | `Qwen/Qwen2.5-7B-Instruct` |
+| `VLLM_DTYPE` | Inference data type | `float16` |
+| `VLLM_MAX_MODEL_LEN` | Maximum context length | `8192` |
+| `OPENAI_API_KEY` | API key for remote OpenAI-compat servers | (not set) |
+| `OPENAI_ORG_ID` | OpenAI organization ID | (not set) |
+| `OPENAI_PROJECT_ID` | OpenAI project ID | (not set) |
 
 #### Multi-Provider Configuration
 

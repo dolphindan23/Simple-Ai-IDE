@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import { runsStorage } from "./runs";
-import { ollama } from "./ollama";
+import { getDefaultLLMAdapter } from "./llm/factory";
 import { validatePatch, formatValidationErrors, type TrustLimits } from "./patchValidator";
 import type { StepType, StepInput, TaskRun } from "@shared/schema";
 import { createRun, getRun, getRunByKey } from "./aiDb";
@@ -345,7 +345,8 @@ Output ONLY valid unified diff format.`;
         throw new Error(`Unknown step type: ${stepType}`);
     }
 
-    const response = await ollama.chat([
+    const llm = getDefaultLLMAdapter();
+    const response = await llm.chat([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ]);

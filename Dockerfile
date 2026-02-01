@@ -40,6 +40,10 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/package*.json ./
 
+# Copy entrypoint script
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
+
 # Create writable dirs and own them
 RUN mkdir -p /app/.simpleaide /app/projects \
   && chown -R node:node /app
@@ -52,4 +56,4 @@ EXPOSE 8521
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://localhost:8521/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-CMD ["npm", "run", "start"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

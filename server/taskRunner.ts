@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { OllamaAdapter } from "./ollama";
+import { getLLMAdapter, LLMAdapter } from "./llm/factory";
 import type { Task, TaskMode, TrustSettings } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
@@ -217,7 +217,7 @@ function applyDiff(cwd: string, diffContent: string): { success: boolean; error?
   }
 }
 
-async function runPlanMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+async function runPlanMode(task: Task, ollama: LLMAdapter): Promise<void> {
   const runId = getOrCreateRunId(task.id, "plan", task.goal, ["planner"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   
@@ -299,7 +299,7 @@ Format as JSON with structure:
   }
 }
 
-async function runImplementMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+async function runImplementMode(task: Task, ollama: LLMAdapter): Promise<void> {
   const runId = getOrCreateRunId(task.id, "implement", task.goal, ["coder"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   
@@ -429,7 +429,7 @@ Output ONLY the unified diff. No explanations before or after.`;
   }
 }
 
-async function runReviewMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+async function runReviewMode(task: Task, ollama: LLMAdapter): Promise<void> {
   const runId = getOrCreateRunId(task.id, "review", task.goal, ["reviewer"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   
@@ -497,7 +497,7 @@ ${task.goal}
   }
 }
 
-async function runTestMode(task: Task, ollama: OllamaAdapter): Promise<void> {
+async function runTestMode(task: Task, ollama: LLMAdapter): Promise<void> {
   const runId = getOrCreateRunId(task.id, "test", task.goal, ["testfixer"], !task.accurateMode);
   const modeLabel = task.accurateMode ? "Accurate" : "Fast";
   
@@ -590,7 +590,7 @@ async function runVerifyStep(cwd: string, verifyCommand?: string, runId?: string
 
 async function runTestFixerLoop(
   task: Task,
-  ollama: OllamaAdapter,
+  ollama: LLMAdapter,
   verifyCommand: string,
   maxAttempts: number = 3,
   trustSettings?: TrustSettings
@@ -781,7 +781,7 @@ export async function runTask(taskId: string): Promise<void> {
   log(taskId, `[INFO] Starting task: ${task.mode}\n`);
   log(taskId, `[INFO] Goal: ${task.goal}\n`);
 
-  const ollama = new OllamaAdapter();
+  const ollama = getLLMAdapter();
 
   try {
     switch (task.mode) {
@@ -973,7 +973,7 @@ export async function applyAndVerify(
     };
   }
   
-  const ollama = new OllamaAdapter();
+  const ollama = getLLMAdapter();
   const maxAttempts = settings.autoFixEnabled ? settings.maxFixAttempts : 0;
   
   if (maxAttempts === 0) {
