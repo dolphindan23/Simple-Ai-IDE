@@ -98,3 +98,6 @@ Security measures include AES-256-GCM encryption for secrets, strict file permis
 - **Kaggle API**: For Kaggle services.
 - **HuggingFace API**: For HuggingFace services.
 - **NVIDIA NGC API**: For NVIDIA NGC services.
+
+
+Created with love, caffeine, and tears, hook a brotha up! https://buymeacoffee.com/danielcuevas
